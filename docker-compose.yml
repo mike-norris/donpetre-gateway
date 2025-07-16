@@ -1,0 +1,52 @@
+  // Docker Compose file for development
+  version: '3.8'
+
+  services:
+    postgresql:
+      image: postgres:15-alpine
+      container_name: openrangelabs-donpetre-db
+      environment:
+        POSTGRES_DB: knowledge_platform
+        POSTGRES_USER: knowledge_user
+        POSTGRES_PASSWORD: knowledge_pass
+      ports:
+        - "5432:5432"
+      volumes:
+        - postgres_data:/var/lib/postgresql/data
+        - ./init-scripts:/docker-entrypoint-initdb.d
+      networks:
+        - openrangelabs-donpetre
+
+    redis:
+      image: redis:7-alpine
+      container_name: openrangelabs-donpetre-redis
+      ports:
+        - "6379:6379"
+      volumes:
+        - redis_data:/data
+      networks:
+        - openrangelabs-donpetre
+
+    api-gateway:
+      build: .
+      container_name: openrangelabs-donpetre-gateway
+      ports:
+        - "8080:8080"
+      environment:
+        SPRING_PROFILES_ACTIVE: docker
+        DB_USERNAME: knowledge_user
+        DB_PASSWORD: knowledge_pass
+        REDIS_HOST: redis
+      depends_on:
+        - postgresql
+        - redis
+      networks:
+        - openrangelabs-donpetre
+
+  volumes:
+    postgres_data:
+    redis_data:
+
+  networks:
+    openrangelabs-donpetre:
+      driver: bridge
