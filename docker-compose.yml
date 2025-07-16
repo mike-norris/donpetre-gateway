@@ -1,52 +1,78 @@
-  // Docker Compose file for development
-  version: '3.8'
+version: '3.8'
 
-  services:
-    postgresql:
-      image: postgres:15-alpine
-      container_name: openrangelabs-donpetre-db
-      environment:
-        POSTGRES_DB: knowledge_platform
-        POSTGRES_USER: knowledge_user
-        POSTGRES_PASSWORD: knowledge_pass
-      ports:
-        - "5432:5432"
-      volumes:
-        - postgres_data:/var/lib/postgresql/data
-        - ./init-scripts:/docker-entrypoint-initdb.d
-      networks:
-        - openrangelabs-donpetre
+services:
+  postgresql:
+    image: postgres:15-alpine
+    container_name: openrangelabs-donpetre-db
+    environment:
+      POSTGRES_DB: knowledge_platform
+      POSTGRES_USER: knowledge_user
+      POSTGRES_PASSWORD: knowledge_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - openrangelabs-donpetre
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U knowledge_user -d knowledge_platform"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-    redis:
-      image: redis:7-alpine
-      container_name: openrangelabs-donpetre-redis
-      ports:
-        - "6379:6379"
-      volumes:
-        - redis_data:/data
-      networks:
-        - openrangelabs-donpetre
+  redis:
+    image: redis:7-alpine
+    container_name: openrangelabs-donpetre-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - openrangelabs-donpetre
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-    api-gateway:
-      build: .
-      container_name: openrangelabs-donpetre-gateway
-      ports:
-        - "8080:8080"
-      environment:
-        SPRING_PROFILES_ACTIVE: docker
-        DB_USERNAME: knowledge_user
-        DB_PASSWORD: knowledge_pass
-        REDIS_HOST: redis
-      depends_on:
-        - postgresql
-        - redis
-      networks:
-        - openrangelabs-donpetre
+  api-gateway:
+    build: .
+    container_name: openrangelabs-donpetre-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_HOST: postgresql
+      DB_PORT: 5432
+      DB_NAME: knowledge_platform
+      DB_USERNAME: knowledge_user
+      DB_PASSWORD: knowledge_pass
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:-bXlTZWNyZXRLZXlGb3JKV1RUb2tlbkdlbmVyYXRpb25BbmRWYWxpZGF0aW9u}
+      LOG_LEVEL: INFO
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - openrangelabs-donpetre
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
-  volumes:
-    postgres_data:
-    redis_data:
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
 
-  networks:
-    openrangelabs-donpetre:
-      driver: bridge
+networks:
+  openrangelabs-donpetre:
+    driver: bridge
+    name: openrangelabs-donpetre-network

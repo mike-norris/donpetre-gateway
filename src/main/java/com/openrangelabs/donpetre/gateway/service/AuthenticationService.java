@@ -18,12 +18,18 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.time.LocalDateTime;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Authentication service handling user registration, login, and token management
+ * Bridges blocking repository calls with reactive controller layer
+ */
 @Service
 public class AuthenticationService {
 
@@ -57,19 +63,20 @@ public class AuthenticationService {
      * Register a new user with default USER role
      */
     public Mono<AuthenticationResponse> register(RegisterRequest request) {
-        return userRepository.existsByUsername(request.getUsername())
-                .flatMap(exists -> {
-                    if (exists) {
-                        return Mono.error(new RuntimeException("Username already exists"));
+        return Mono.fromCallable(() -> {
+                    // Check if username already exists
+                    if (userRepository.existsByUsername(request.getUsername())) {
+                        throw new RuntimeException("Username already exists");
                     }
-                    return userRepository.existsByEmail(request.getEmail());
-                })
-                .flatMap(exists -> {
-                    if (exists) {
-                        return Mono.error(new RuntimeException("Email already exists"));
+
+                    // Check if email already exists
+                    if (userRepository.existsByEmail(request.getEmail())) {
+                        throw new RuntimeException("Email already exists");
                     }
+
                     return createUser(request);
                 })
+                .subscribeOn(Schedulers.boundedElastic())
                 .flatMap(this::generateAuthResponse);
     }
 
@@ -81,11 +88,17 @@ public class AuthenticationService {
                 .authenticate(new UsernamePasswordAuthenticationToken(
                         request.getUsername(),
                         request.getPassword()))
-                .then(userRepository.findByUsername(request.getUsername()))
-                .flatMap(user -> {
+                .then(Mono.fromCallable(() -> {
+                    Optional<User> userOpt = userRepository.findByUsername(request.getUsername());
+                    if (userOpt.isEmpty()) {
+                        throw new RuntimeException("User not found");
+                    }
+
+                    User user = userOpt.get();
                     user.setLastLogin(LocalDateTime.now());
                     return userRepository.save(user);
-                })
+                }))
+                .subscribeOn(Schedulers.boundedElastic())
                 .flatMap(this::generateAuthResponse);
     }
 
@@ -94,15 +107,22 @@ public class AuthenticationService {
      */
     public Mono<AuthenticationResponse> refreshToken(String authHeader) {
         return extractTokenFromHeader(authHeader)
-                .flatMap(token -> refreshTokenRepository.findByToken(token))
-                .filter(refreshToken -> !refreshToken.isExpired())
-                .flatMap(refreshToken -> {
+                .flatMap(token -> Mono.fromCallable(() -> {
+                    Optional<RefreshToken> refreshTokenOpt = refreshTokenRepository.findByToken(token);
+                    if (refreshTokenOpt.isEmpty() || refreshTokenOpt.get().isExpired()) {
+                        throw new RuntimeException("Invalid or expired refresh token");
+                    }
+
+                    RefreshToken refreshToken = refreshTokenOpt.get();
                     User user = refreshToken.getUser();
-                    // Delete old refresh token and create new one
-                    return refreshTokenRepository.delete(refreshToken)
-                            .then(generateAuthResponse(user));
-                })
-                .switchIfEmpty(Mono.error(new RuntimeException("Invalid or expired refresh token")));
+
+                    // Delete old refresh token
+                    refreshTokenRepository.delete(refreshToken);
+
+                    return user;
+                }))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(this::generateAuthResponse);
     }
 
     /**
@@ -110,8 +130,12 @@ public class AuthenticationService {
      */
     public Mono<Void> logout(String authHeader) {
         return extractTokenFromHeader(authHeader)
-                .flatMap(token -> refreshTokenRepository.findByToken(token))
-                .flatMap(refreshToken -> refreshTokenRepository.delete(refreshToken))
+                .flatMap(token -> Mono.fromCallable(() -> {
+                    Optional<RefreshToken> refreshTokenOpt = refreshTokenRepository.findByToken(token);
+                    refreshTokenOpt.ifPresent(refreshTokenRepository::delete);
+                    return null;
+                }))
+                .subscribeOn(Schedulers.boundedElastic())
                 .then();
     }
 
@@ -133,55 +157,88 @@ public class AuthenticationService {
     }
 
     /**
+     * Get current user information from JWT token
+     */
+    public Mono<Map<String, Object>> getCurrentUser(String authHeader) {
+        return extractTokenFromHeader(authHeader)
+                .flatMap(token -> {
+                    try {
+                        String username = jwtService.extractUsername(token);
+                        return Mono.fromCallable(() -> {
+                            Optional<User> userOpt = userRepository.findByUsername(username);
+                            if (userOpt.isEmpty()) {
+                                throw new RuntimeException("User not found");
+                            }
+
+                            User user = userOpt.get();
+                            return Map.of(
+                                    "id", user.getId().toString(),
+                                    "username", user.getUsername(),
+                                    "email", user.getEmail(),
+                                    "roles", user.getRoles().stream()
+                                            .map(Role::getName)
+                                            .collect(Collectors.toSet()),
+                                    "lastLogin", user.getLastLogin() != null ? user.getLastLogin().toString() : null,
+                                    "isActive", user.getIsActive()
+                            );
+                        }).subscribeOn(Schedulers.boundedElastic());
+                    } catch (Exception e) {
+                        return Mono.error(new RuntimeException("Invalid token"));
+                    }
+                });
+    }
+
+    /**
      * Create new user with default USER role
      */
-    private Mono<User> createUser(RegisterRequest request) {
+    private User createUser(RegisterRequest request) {
         User user = new User(
                 request.getUsername(),
                 request.getEmail(),
                 passwordEncoder.encode(request.getPassword())
         );
 
-        return roleRepository.findByName("USER")
-                .switchIfEmpty(createDefaultRole())
-                .flatMap(role -> {
-                    user.addRole(role);
-                    return userRepository.save(user);
-                });
-    }
+        // Get or create USER role
+        Optional<Role> roleOpt = roleRepository.findByName("USER");
+        Role userRole;
+        if (roleOpt.isEmpty()) {
+            userRole = new Role("USER", "Default user role");
+            userRole = roleRepository.save(userRole);
+        } else {
+            userRole = roleOpt.get();
+        }
 
-    /**
-     * Create default USER role if it doesn't exist
-     */
-    private Mono<Role> createDefaultRole() {
-        Role userRole = new Role("USER", "Default user role");
-        return roleRepository.save(userRole);
+        user.addRole(userRole);
+        return userRepository.save(user);
     }
 
     /**
      * Generate JWT access and refresh tokens for authenticated user
      */
     private Mono<AuthenticationResponse> generateAuthResponse(User user) {
-        String accessToken = jwtService.generateToken(user);
-        String refreshToken = jwtService.generateRefreshToken(user);
+        return Mono.fromCallable(() -> {
+            String accessToken = jwtService.generateToken(user);
+            String refreshToken = jwtService.generateRefreshToken(user);
 
-        RefreshToken refreshTokenEntity = new RefreshToken(
-                refreshToken,
-                LocalDateTime.now().plusDays(7),
-                user
-        );
+            RefreshToken refreshTokenEntity = new RefreshToken(
+                    refreshToken,
+                    LocalDateTime.now().plusDays(7),
+                    user
+            );
 
-        return refreshTokenRepository.save(refreshTokenEntity)
-                .then(Mono.just(new AuthenticationResponse(
-                        accessToken,
-                        refreshToken,
-                        86400000L, // 24 hours in milliseconds
-                        user.getUsername(),
-                        user.getEmail(),
-                        user.getRoles().stream()
-                                .map(Role::getName)
-                                .collect(Collectors.toSet())
-                )));
+            refreshTokenRepository.save(refreshTokenEntity);
+
+            return new AuthenticationResponse(
+                    accessToken,
+                    refreshToken,
+                    86400000L, // 24 hours in milliseconds
+                    user.getUsername(),
+                    user.getEmail(),
+                    user.getRoles().stream()
+                            .map(Role::getName)
+                            .collect(Collectors.toSet())
+            );
+        }).subscribeOn(Schedulers.boundedElastic());
     }
 
     /**

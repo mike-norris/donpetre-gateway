@@ -78,14 +78,14 @@ spring:
               factor: 2
               basedOnPreviousValue: false
 
-        - name: CircuitBreaker
-          args:
-            name: defaultCircuitBreaker
-            fallbackUri: forward:/fallback
-            slowCallDurationThreshold: 10s
-            slowCallRateThreshold: 50
-            failureRateThreshold: 50
-            waitDurationInOpenState: 30s
+        #- name: CircuitBreaker
+        #  args:
+        #    name: defaultCircuitBreaker
+        #    fallbackUri: forward:/fallback
+        #    slowCallDurationThreshold: 10s
+        #    slowCallRateThreshold: 50
+        #    failureRateThreshold: 50
+        #    waitDurationInOpenState: 30s
 
         - name: RequestRateLimiter
           args:

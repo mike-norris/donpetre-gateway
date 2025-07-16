@@ -34,7 +34,8 @@ dependency-reduced-pom.xml
 buildNumber.properties
 .mvn/timing.properties
 # https://maven.apache.org/wrapper/#usage-without-binary-jar
-.mvn/wrapper/maven-wrapper.jar
+.mvn/
+mvnw*
 
 # Gradle
 .gradle/
