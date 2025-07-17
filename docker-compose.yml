@@ -1,5 +1,4 @@
-version: '3.8'
-
+# docker-compose.yml - Secure version with secret management
 services:
   postgresql:
     image: postgres:15-alpine
@@ -7,7 +6,8 @@ services:
     environment:
       POSTGRES_DB: knowledge_platform
       POSTGRES_USER: knowledge_user
-      POSTGRES_PASSWORD: knowledge_pass
+      # Use Docker secrets or env file for passwords
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
     ports:
       - "5432:5432"
     volumes:
@@ -15,6 +15,8 @@ services:
       - ./init-scripts:/docker-entrypoint-initdb.d
     networks:
       - openrangelabs-donpetre
+    secrets:
+      - db_password
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U knowledge_user -d knowledge_platform"]
       interval: 30s
@@ -30,6 +32,8 @@ services:
       - redis_data:/data
     networks:
       - openrangelabs-donpetre
+    # Optional: Add Redis password
+    command: redis-server --requirepass ${REDIS_PASSWORD:-}
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
@@ -47,11 +51,24 @@ services:
       DB_PORT: 5432
       DB_NAME: knowledge_platform
       DB_USERNAME: knowledge_user
-      DB_PASSWORD: knowledge_pass
+      # Use Docker secrets for sensitive data
+      DB_PASSWORD_FILE: /run/secrets/db_password
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      JWT_SECRET: ${JWT_SECRET:-bXlTZWNyZXRLZXlGb3JKV1RUb2tlbkdlbmVyYXRpb25BbmRWYWxpZGF0aW9u}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+
+      # JWT Configuration - Use secrets
+      JWT_SECRET_KEY_FILE: /run/secrets/jwt_secret
+      JWT_BACKUP_SECRET_FILE: /run/secrets/jwt_backup_secret
+      JWT_ALGORITHM: HS512
+      JWT_AUTO_GENERATE: false
+
+      # Logging
       LOG_LEVEL: INFO
+
+      # Security
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://yourdomain.com}
+
     depends_on:
       postgresql:
         condition: service_healthy
@@ -59,12 +76,25 @@ services:
         condition: service_healthy
     networks:
       - openrangelabs-donpetre
+    secrets:
+      - db_password
+      - jwt_secret
+      - jwt_backup_secret
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+
+# Docker Secrets Configuration
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+  jwt_secret:
+    file: ./secrets/jwt_secret.txt
+  jwt_backup_secret:
+    file: ./secrets/jwt_backup_secret.txt
 
 volumes:
   postgres_data:

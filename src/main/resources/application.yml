@@ -1,3 +1,4 @@
+# src/main/resources/application.yml - Updated with secure JWT configuration
 server:
   port: 8080
   shutdown: graceful
@@ -78,15 +79,6 @@ spring:
               factor: 2
               basedOnPreviousValue: false
 
-        #- name: CircuitBreaker
-        #  args:
-        #    name: defaultCircuitBreaker
-        #    fallbackUri: forward:/fallback
-        #    slowCallDurationThreshold: 10s
-        #    slowCallRateThreshold: 50
-        #    failureRateThreshold: 50
-        #    waitDurationInOpenState: 30s
-
         - name: RequestRateLimiter
           args:
             redis-rate-limiter.replenishRate: ${RATE_LIMIT_REPLENISH:100}
@@ -123,14 +115,6 @@ spring:
             - Path=/ui/**
           filters:
             - StripPrefix=1
-
-  # Security Configuration
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: ${JWT_ISSUER_URI:http://localhost:8080}
-          jwk-set-uri: ${JWT_JWK_SET_URI:http://localhost:8080/.well-known/jwks.json}
 
 # Actuator Configuration
 management:
@@ -182,15 +166,34 @@ logging:
 # Custom Application Configuration
 open-range-labs:
   donpetre:
-    # Security settings
+    # ENHANCED SECURITY SETTINGS
     security:
       jwt:
-        secret: ${JWT_SECRET:bXlTZWNyZXRLZXlGb3JKV1RUb2tlbkdlbmVyYXRpb25BbmRWYWxpZGF0aW9u}
+        # CRITICAL: Remove default secret in production
+        # Use JWT_SECRET_KEY environment variable instead
+        secret: ${JWT_SECRET:}  # Empty default - forces external configuration
         expiration: ${JWT_EXPIRATION:86400000} # 24 hours in milliseconds
         refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000} # 7 days in milliseconds
 
+        # Enhanced JWT security settings
+        algorithm: ${JWT_ALGORITHM:HS512}
+        key-length: ${JWT_KEY_LENGTH:64} # 512 bits for HS512
+        auto-generate-secret: ${JWT_AUTO_GENERATE:false} # Only true in dev
+
+        # Optional: Encrypted secret support
+        encrypted-secret: ${JWT_ENCRYPTED_SECRET:}
+
+        # Optional: External secret store configuration
+        secret-store:
+          enabled: ${JWT_SECRET_STORE_ENABLED:false}
+          name: ${JWT_SECRET_STORE_NAME:}
+          provider: ${JWT_SECRET_STORE_PROVIDER:} # aws, azure, vault, etc.
+
+        # Backup secret for key rotation
+        backup-secret: ${JWT_BACKUP_SECRET:}
+
       cors:
-        allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:8080,http://localhost:8084}
+        allowed-origins: ${CORS_ALLOWED_ORIGINS:https://yourdomain.com}
         allowed-methods: ${CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,OPTIONS,PATCH}
         allowed-headers: ${CORS_ALLOWED_HEADERS:*}
         allow-credentials: ${CORS_ALLOW_CREDENTIALS:true}
@@ -265,8 +268,10 @@ logging:
 open-range-labs:
   donpetre:
     security:
+      jwt:
+        auto-generate-secret: true  # Allow auto-generation in dev only
       cors:
-        allowed-origins: "*"
+        allowed-origins: "http://localhost:3000,http://localhost:8080,http://localhost:8084"
 
 ---
 # Production Profile
@@ -291,6 +296,8 @@ logging:
 open-range-labs:
   donpetre:
     security:
+      jwt:
+        auto-generate-secret: false  # Never auto-generate in production
       cors:
         allowed-origins: ${CORS_ALLOWED_ORIGINS:https://yourdomain.com}
 
@@ -318,4 +325,3 @@ open-range-labs:
       search-service:
         url: http://search-service:8083
       web-ui:
-        url: http://web-ui:8084

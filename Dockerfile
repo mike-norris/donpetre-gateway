@@ -1,10 +1,63 @@
-# Dockerfile for API Gateway
-FROM openjdk:21-jdk-slim
+# Multi-stage Dockerfile for API Gateway
+# Stage 1: Build the application
+FROM amazoncorretto:17-alpine AS builder
 
 WORKDIR /app
 
-COPY target/api-gateway-1.0.0-SNAPSHOT.jar app.jar
+# Copy Maven wrapper and pom.xml first for better caching
+COPY mvnw .
+COPY .mvn .mvn
+COPY pom.xml .
 
+# Make mvnw executable
+RUN chmod +x mvnw
+
+# Download dependencies (this layer will be cached unless pom.xml changes)
+RUN ./mvnw dependency:go-offline -B
+
+# Copy source code
+COPY src src
+
+# Build the application
+RUN ./mvnw clean package -DskipTests -B
+
+# Stage 2: Create the runtime image
+FROM amazoncorretto:17-alpine AS runtime
+
+# Add security and operational improvements
+RUN apt-get update && apt-get install -y \
+    curl \
+    jq \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r appuser \
+    && useradd -r -g appuser appuser
+
+WORKDIR /app
+
+# Copy the JAR from builder stage
+COPY --from=builder /app/target/api-gateway-*.jar app.jar
+
+# Create directories for logs and secrets
+RUN mkdir -p /app/logs /app/secrets \
+    && chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8080/actuator/health || exit 1
+
+# Expose port
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# JVM optimizations for containerized environments
+ENV JAVA_OPTS="-XX:+UseContainerSupport \
+               -XX:MaxRAMPercentage=75.0 \
+               -XX:+UseG1GC \
+               -XX:+UseStringDeduplication \
+               -Djava.security.egd=file:/dev/./urandom \
+               -Dspring.profiles.active=docker"
+
+# Entry point with proper signal handling
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar app.jar"]

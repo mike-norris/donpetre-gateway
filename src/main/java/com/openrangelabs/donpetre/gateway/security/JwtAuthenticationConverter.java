@@ -3,7 +3,6 @@ package com.openrangelabs.donpetre.gateway.security;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.stereotype.Component;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -14,8 +13,8 @@ import java.util.stream.Collectors;
 /**
  * Simple JWT claims to authorities converter
  * Extracts user roles and authorities from JWT token claims
+ * Note: This is a utility class, not a Spring component
  */
-@Component("customJwtConverter")
 public class JwtAuthenticationConverter {
 
     /**
