@@ -1,4 +1,6 @@
-# Database initialization script (init-scripts/01-init-schema.sql)
+-- Database initialization script for DonPetre (init-scripts/01-init-schema.sql)
+-- Updated for new database name and R2DBC compatibility
+
 -- Create roles table
 CREATE TABLE IF NOT EXISTS roles (
                                      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -24,13 +26,15 @@ CREATE TABLE IF NOT EXISTS user_roles (
                                           PRIMARY KEY (user_id, role_id)
 );
 
--- Create refresh_tokens table
+-- Create refresh_tokens table (updated for R2DBC)
 CREATE TABLE IF NOT EXISTS refresh_tokens (
                                               id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                                              token VARCHAR(255) UNIQUE NOT NULL,
+                                              token VARCHAR(512) UNIQUE NOT NULL,
                                               expiry_date TIMESTAMP NOT NULL,
                                               user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-                                              created_at TIMESTAMP DEFAULT NOW()
+                                              created_at TIMESTAMP DEFAULT NOW(),
+                                              last_used TIMESTAMP,
+                                              device_info VARCHAR(255)
 );
 
 -- Insert default roles
@@ -43,5 +47,37 @@ ON CONFLICT (name) DO NOTHING;
 -- Create indexes for performance
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active);
+CREATE INDEX IF NOT EXISTS idx_users_last_login ON users(last_login);
+
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token ON refresh_tokens(token);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expiry ON refresh_tokens(expiry_date);
+
+CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON user_roles(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_role_id ON user_roles(role_id);
+
+-- Create a default admin user (password: admin123 - change in production!)
+-- Password is BCrypt hash of "admin123"
+INSERT INTO users (username, email, password, is_active) VALUES
+    ('admin', 'admin@donpetre.com', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LeRgHZKo4Zr6LdDqK', true)
+ON CONFLICT (username) DO NOTHING;
+
+-- Assign admin role to admin user
+INSERT INTO user_roles (user_id, role_id)
+SELECT u.id, r.id
+FROM users u, roles r
+WHERE u.username = 'admin' AND r.name = 'ADMIN'
+ON CONFLICT (user_id, role_id) DO NOTHING;
+
+-- Create a test user (password: user123 - for development only)
+INSERT INTO users (username, email, password, is_active) VALUES
+    ('testuser', 'test@donpetre.com', '$2a$12$8.xsuGNJIHj/ZzNOVNWe.uuKBZ.wE/iGQD.LZJ5k5kGq6qvAqRJXm', true)
+ON CONFLICT (username) DO NOTHING;
+
+-- Assign user role to test user
+INSERT INTO user_roles (user_id, role_id)
+SELECT u.id, r.id
+FROM users u, roles r
+WHERE u.username = 'testuser' AND r.name = 'USER'
+ON CONFLICT (user_id, role_id) DO NOTHING;

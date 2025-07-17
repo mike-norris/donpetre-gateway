@@ -1,39 +1,35 @@
-# docker-compose.yml - Secure version with secret management
+# docker-compose.yml - Updated for proper Docker build and launch
 services:
   postgresql:
     image: postgres:15-alpine
-    container_name: openrangelabs-donpetre-db
+    container_name: donpetre-db
     environment:
-      POSTGRES_DB: knowledge_platform
-      POSTGRES_USER: knowledge_user
-      # Use Docker secrets or env file for passwords
-      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      POSTGRES_DB: donpetre
+      POSTGRES_USER: don
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-don_pass}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-scripts:/docker-entrypoint-initdb.d
     networks:
-      - openrangelabs-donpetre
-    secrets:
-      - db_password
+      - donpetre-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U knowledge_user -d knowledge_platform"]
+      test: ["CMD-SHELL", "pg_isready -U don -d donpetre"]
       interval: 30s
       timeout: 10s
       retries: 3
 
   redis:
     image: redis:7-alpine
-    container_name: openrangelabs-donpetre-redis
+    container_name: donpetre-redis
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
     networks:
-      - openrangelabs-donpetre
-    # Optional: Add Redis password
-    command: redis-server --requirepass ${REDIS_PASSWORD:-}
+      - donpetre-network
+    command: redis-server ${REDIS_PASSWORD:+--requirepass $REDIS_PASSWORD}
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
@@ -41,33 +37,41 @@ services:
       retries: 3
 
   api-gateway:
-    build: .
-    container_name: openrangelabs-donpetre-gateway
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: donpetre-gateway
     ports:
       - "8080:8080"
     environment:
       SPRING_PROFILES_ACTIVE: docker
+
+      # Database Configuration
       DB_HOST: postgresql
       DB_PORT: 5432
-      DB_NAME: knowledge_platform
-      DB_USERNAME: knowledge_user
-      # Use Docker secrets for sensitive data
-      DB_PASSWORD_FILE: /run/secrets/db_password
+      DB_NAME: donpetre
+      DB_USERNAME: don
+      DB_PASSWORD: ${DB_PASSWORD:-don_pass}
+
+      # Redis Configuration
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
 
-      # JWT Configuration - Use secrets
-      JWT_SECRET_KEY_FILE: /run/secrets/jwt_secret
-      JWT_BACKUP_SECRET_FILE: /run/secrets/jwt_backup_secret
+      # JWT Configuration
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-YourSecretKeyHere123456789012345678901234567890}
       JWT_ALGORITHM: HS512
-      JWT_AUTO_GENERATE: false
+      JWT_AUTO_GENERATE: ${JWT_AUTO_GENERATE:-false}
 
       # Logging
-      LOG_LEVEL: INFO
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      R2DBC_LOG_LEVEL: ${R2DBC_LOG_LEVEL:-INFO}
 
       # Security
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://yourdomain.com}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8080}
+
+      # JVM Options for Docker
+      JAVA_OPTS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
 
     depends_on:
       postgresql:
@@ -75,26 +79,13 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - openrangelabs-donpetre
-    secrets:
-      - db_password
-      - jwt_secret
-      - jwt_backup_secret
+      - donpetre-network
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
-
-# Docker Secrets Configuration
-secrets:
-  db_password:
-    file: ./secrets/db_password.txt
-  jwt_secret:
-    file: ./secrets/jwt_secret.txt
-  jwt_backup_secret:
-    file: ./secrets/jwt_backup_secret.txt
+      start_period: 90s
 
 volumes:
   postgres_data:
@@ -103,6 +94,6 @@ volumes:
     driver: local
 
 networks:
-  openrangelabs-donpetre:
+  donpetre-network:
     driver: bridge
-    name: openrangelabs-donpetre-network
+    name: donpetre-network

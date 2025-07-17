@@ -1,10 +1,7 @@
-# src/main/resources/application.yml - Updated with secure JWT configuration
+# application.yml - Clean configuration for DonPetre API Gateway
 server:
   port: 8080
   shutdown: graceful
-  tomcat:
-    connection-timeout: 20000
-    max-connections: 8192
 
 spring:
   application:
@@ -13,32 +10,23 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
 
-  # Database Configuration
-  datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:knowledge_platform}
-    username: ${DB_USERNAME:knowledge_user}
-    password: ${DB_PASSWORD:knowledge_pass}
-    driver-class-name: org.postgresql.Driver
-    hikari:
-      maximum-pool-size: 20
-      minimum-idle: 5
-      idle-timeout: 300000
-      max-lifetime: 1200000
-      connection-timeout: 20000
+  # R2DBC Configuration (replaces JPA)
+  r2dbc:
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:donpetre}
+    username: ${DB_USERNAME:don}
+    password: ${DB_PASSWORD:don_pass}
+    pool:
+      initial-size: 5
+      max-size: 20
+      max-idle-time: 30m
 
-  # JPA Configuration
-  jpa:
-    hibernate:
-      ddl-auto: ${DDL_AUTO:validate}
-    show-sql: ${SHOW_SQL:false}
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-        format_sql: true
-        jdbc:
-          batch_size: 20
-        order_inserts: true
-        order_updates: true
+  # Flyway for database migrations
+  flyway:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:donpetre}
+    user: ${DB_USERNAME:don}
+    password: ${DB_PASSWORD:don_pass}
+    baseline-on-migrate: true
+    locations: classpath:db/migration
 
   # Redis Configuration
   data:
@@ -48,13 +36,6 @@ spring:
       password: ${REDIS_PASSWORD:}
       timeout: 2000ms
       database: 0
-      lettuce:
-        pool:
-          max-active: 8
-          max-idle: 8
-          min-idle: 0
-          max-wait: -1ms
-        shutdown-timeout: 100ms
 
   # Spring Cloud Gateway Configuration
   cloud:
@@ -62,27 +43,19 @@ spring:
       httpclient:
         connect-timeout: 5000
         response-timeout: 30s
-        pool:
-          max-connections: 100
-          max-idle-time: 30s
 
-      # Global filters applied to all routes
+      # Global filters
       default-filters:
         - name: Retry
           args:
             retries: 3
             statuses: BAD_GATEWAY,GATEWAY_TIMEOUT,SERVICE_UNAVAILABLE
             methods: GET,POST,PUT,DELETE
-            backoff:
-              firstBackoff: 50ms
-              maxBackoff: 500ms
-              factor: 2
-              basedOnPreviousValue: false
 
         - name: RequestRateLimiter
           args:
-            redis-rate-limiter.replenishRate: ${RATE_LIMIT_REPLENISH:100}
-            redis-rate-limiter.burstCapacity: ${RATE_LIMIT_BURST:200}
+            redis-rate-limiter.replenishRate: 100
+            redis-rate-limiter.burstCapacity: 200
             redis-rate-limiter.requestedTokens: 1
             key-resolver: "#{@userKeyResolver}"
 
@@ -94,6 +67,10 @@ spring:
             - Path=/api/ingestion/**
           filters:
             - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: knowledge-ingestion
+                fallbackUri: forward:/fallback/knowledge-ingestion
 
         - id: knowledge-management-route
           uri: http://${MANAGEMENT_SERVICE_HOST:localhost}:${MANAGEMENT_SERVICE_PORT:8082}
@@ -101,6 +78,10 @@ spring:
             - Path=/api/knowledge/**
           filters:
             - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: knowledge-management
+                fallbackUri: forward:/fallback/knowledge-management
 
         - id: search-service-route
           uri: http://${SEARCH_SERVICE_HOST:localhost}:${SEARCH_SERVICE_PORT:8083}
@@ -108,13 +89,21 @@ spring:
             - Path=/api/search/**
           filters:
             - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: search-service
+                fallbackUri: forward:/fallback/search-service
 
-        - id: web-ui-route
-          uri: http://${WEB_UI_HOST:localhost}:${WEB_UI_PORT:8084}
+        - id: auth-route
+          uri: http://localhost:8080
           predicates:
-            - Path=/ui/**
+            - Path=/api/auth/**
           filters:
-            - StripPrefix=1
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 10
+                redis-rate-limiter.burstCapacity: 20
+                key-resolver: "#{@userKeyResolver}"
 
 # Actuator Configuration
 management:
@@ -129,20 +118,6 @@ management:
       show-components: always
     gateway:
       enabled: true
-  health:
-    circuitbreakers:
-      enabled: true
-    ratelimiters:
-      enabled: true
-  metrics:
-    export:
-      prometheus:
-        enabled: true
-    distribution:
-      percentiles-histogram:
-        http.server.requests: true
-      percentiles:
-        http.server.requests: 0.5, 0.95, 0.99
 
 # Logging Configuration
 logging:
@@ -150,98 +125,29 @@ logging:
     com.openrangelabs.donpetre: ${LOG_LEVEL:DEBUG}
     org.springframework.cloud.gateway: ${GATEWAY_LOG_LEVEL:INFO}
     org.springframework.security: ${SECURITY_LOG_LEVEL:INFO}
-    org.springframework.web.reactive: ${WEB_LOG_LEVEL:INFO}
-    io.github.resilience4j: INFO
+    org.springframework.r2dbc: ${R2DBC_LOG_LEVEL:INFO}
+    io.r2dbc: ${R2DBC_LOG_LEVEL:INFO}
     reactor.netty: ${NETTY_LOG_LEVEL:WARN}
   pattern:
-    console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}"
-    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
-  file:
-    name: ${LOG_FILE_PATH:logs/api-gateway.log}
-  logback:
-    rollingpolicy:
-      max-file-size: 10MB
-      max-history: 30
+    console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%5p) %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n"
 
 # Custom Application Configuration
 open-range-labs:
   donpetre:
-    # ENHANCED SECURITY SETTINGS
     security:
       jwt:
-        # CRITICAL: Remove default secret in production
-        # Use JWT_SECRET_KEY environment variable instead
-        secret: ${JWT_SECRET:}  # Empty default - forces external configuration
-        expiration: ${JWT_EXPIRATION:86400000} # 24 hours in milliseconds
-        refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000} # 7 days in milliseconds
-
-        # Enhanced JWT security settings
-        algorithm: ${JWT_ALGORITHM:HS512}
-        key-length: ${JWT_KEY_LENGTH:64} # 512 bits for HS512
-        auto-generate-secret: ${JWT_AUTO_GENERATE:false} # Only true in dev
-
-        # Optional: Encrypted secret support
-        encrypted-secret: ${JWT_ENCRYPTED_SECRET:}
-
-        # Optional: External secret store configuration
-        secret-store:
-          enabled: ${JWT_SECRET_STORE_ENABLED:false}
-          name: ${JWT_SECRET_STORE_NAME:}
-          provider: ${JWT_SECRET_STORE_PROVIDER:} # aws, azure, vault, etc.
-
-        # Backup secret for key rotation
-        backup-secret: ${JWT_BACKUP_SECRET:}
-
+        secret: ${JWT_SECRET:}
+        expiration: 86400000 # 24 hours in milliseconds
+        refresh-expiration: 604800000 # 7 days in milliseconds
+        algorithm: HS512
+        key-length: 64
+        auto-generate-secret: false
       cors:
-        allowed-origins: ${CORS_ALLOWED_ORIGINS:https://yourdomain.com}
-        allowed-methods: ${CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,OPTIONS,PATCH}
-        allowed-headers: ${CORS_ALLOWED_HEADERS:*}
-        allow-credentials: ${CORS_ALLOW_CREDENTIALS:true}
-        max-age: ${CORS_MAX_AGE:3600}
-
-    # Rate limiting settings
-    rate-limiting:
-      enabled: ${RATE_LIMITING_ENABLED:true}
-      requests-per-minute: ${RATE_LIMIT_PER_MINUTE:100}
-      burst-capacity: ${RATE_LIMIT_BURST_CAPACITY:200}
-
-      # Different limits for different user types
-      limits:
-        anonymous: ${RATE_LIMIT_ANONYMOUS:10}
-        user: ${RATE_LIMIT_USER:100}
-        admin: ${RATE_LIMIT_ADMIN:1000}
-
-    # Circuit breaker settings
-    circuit-breaker:
-      failure-rate-threshold: ${CB_FAILURE_RATE:50.0}
-      slow-call-rate-threshold: ${CB_SLOW_CALL_RATE:50.0}
-      slow-call-duration-threshold: ${CB_SLOW_CALL_DURATION:10s}
-      permitted-number-of-calls-in-half-open-state: ${CB_HALF_OPEN_CALLS:10}
-      sliding-window-size: ${CB_SLIDING_WINDOW:100}
-      minimum-number-of-calls: ${CB_MIN_CALLS:20}
-      wait-duration-in-open-state: ${CB_WAIT_DURATION:60s}
-
-    # Service discovery and health checks
-    services:
-      knowledge-ingestion:
-        url: http://${INGESTION_SERVICE_HOST:localhost}:${INGESTION_SERVICE_PORT:8081}
-        health-check-path: /actuator/health
-        timeout: 5s
-
-      knowledge-management:
-        url: http://${MANAGEMENT_SERVICE_HOST:localhost}:${MANAGEMENT_SERVICE_PORT:8082}
-        health-check-path: /actuator/health
-        timeout: 5s
-
-      search-service:
-        url: http://${SEARCH_SERVICE_HOST:localhost}:${SEARCH_SERVICE_PORT:8083}
-        health-check-path: /health
-        timeout: 10s
-
-      web-ui:
-        url: http://${WEB_UI_HOST:localhost}:${WEB_UI_PORT:8084}
-        health-check-path: /health
-        timeout: 3s
+        allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:8080}
+        allowed-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH
+        allowed-headers: "*"
+        allow-credentials: true
+        max-age: 3600
 
 ---
 # Development Profile
@@ -250,14 +156,10 @@ spring:
     activate:
       on-profile: dev
 
-  jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: true
-
-  h2:
-    console:
-      enabled: true
+  r2dbc:
+    pool:
+      initial-size: 2
+      max-size: 10
 
 logging:
   level:
@@ -280,26 +182,23 @@ spring:
     activate:
       on-profile: prod
 
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    show-sql: false
+  r2dbc:
+    pool:
+      initial-size: 10
+      max-size: 50
 
 logging:
   level:
     com.openrangelabs.donpetre: INFO
     org.springframework.cloud.gateway: WARN
     org.springframework.security: WARN
-  file:
-    name: /app/logs/api-gateway.log
+    org.springframework.r2dbc: WARN
 
 open-range-labs:
   donpetre:
     security:
       jwt:
         auto-generate-secret: false  # Never auto-generate in production
-      cors:
-        allowed-origins: ${CORS_ALLOWED_ORIGINS:https://yourdomain.com}
 
 ---
 # Docker Profile
@@ -308,20 +207,16 @@ spring:
     activate:
       on-profile: docker
 
-  datasource:
-    url: jdbc:postgresql://postgresql:5432/knowledge_platform
+  r2dbc:
+    url: r2dbc:postgresql://postgresql:5432/donpetre
+
+  flyway:
+    url: jdbc:postgresql://postgresql:5432/donpetre
 
   data:
     redis:
       host: redis
 
-open-range-labs:
-  donpetre:
-    services:
-      knowledge-ingestion:
-        url: http://knowledge-ingestion:8081
-      knowledge-management:
-        url: http://knowledge-management:8082
-      search-service:
-        url: http://search-service:8083
-      web-ui:
+logging:
+  level:
+    com.openrangelabs.donpetre: INFO

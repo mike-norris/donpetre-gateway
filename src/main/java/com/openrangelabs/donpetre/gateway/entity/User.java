@@ -1,6 +1,9 @@
 package com.openrangelabs.donpetre.gateway.entity;
 
-import jakarta.persistence.*;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -10,41 +13,37 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * User entity implementing Spring Security UserDetails interface
- * Represents authenticated users in the knowledge platform
+ * User entity for R2DBC (reactive database operations)
+ * Implements Spring Security UserDetails interface
+ * Note: R2DBC doesn't support complex relationships like JPA, so roles are handled separately
  */
-@Entity
-@Table(name = "users")
+@Table("users")
 public class User implements UserDetails {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(unique = true, nullable = false, length = 100)
+    @Column("username")
     private String username;
 
-    @Column(unique = true, nullable = false)
+    @Column("email")
     private String email;
 
-    @Column(nullable = false)
+    @Column("password")
     private String password;
 
-    @Column(name = "is_active")
+    @Column("is_active")
     private Boolean isActive = true;
 
-    @Column(name = "created_at")
+    @Column("created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 
-    @Column(name = "last_login")
+    @Column("last_login")
     private LocalDateTime lastLogin;
 
-    @ManyToMany(fetch = FetchType.EAGER)
-    @JoinTable(
-            name = "user_roles",
-            joinColumns = @JoinColumn(name = "user_id"),
-            inverseJoinColumns = @JoinColumn(name = "role_id")
-    )
+    // R2DBC doesn't support @ManyToMany relationships
+    // Roles will be loaded separately and set via service layer
+    @Transient
     private Set<Role> roles = new HashSet<>();
 
     // Constructors
@@ -81,7 +80,7 @@ public class User implements UserDetails {
 
     @Override
     public boolean isEnabled() {
-        return isActive;
+        return isActive != null && isActive;
     }
 
     // Getters and Setters
@@ -107,22 +106,46 @@ public class User implements UserDetails {
     public void setLastLogin(LocalDateTime lastLogin) { this.lastLogin = lastLogin; }
 
     public Set<Role> getRoles() { return roles; }
-    public void setRoles(Set<Role> roles) { this.roles = roles; }
+    public void setRoles(Set<Role> roles) { this.roles = roles != null ? roles : new HashSet<>(); }
 
-    // Helper methods for role management
+    // Helper methods for role management (these work with the transient roles set)
     public void addRole(Role role) {
-        this.roles.add(role);
-        role.getUsers().add(this);
+        if (role != null) {
+            this.roles.add(role);
+            // Note: R2DBC relationship management is done at service layer
+        }
     }
 
     public void removeRole(Role role) {
-        this.roles.remove(role);
-        role.getUsers().remove(this);
+        if (role != null) {
+            this.roles.remove(role);
+            // Note: R2DBC relationship management is done at service layer
+        }
     }
 
     public boolean hasRole(String roleName) {
         return roles.stream()
                 .anyMatch(role -> role.getName().equalsIgnoreCase(roleName));
+    }
+
+    public Set<String> getRoleNames() {
+        return roles.stream()
+                .map(Role::getName)
+                .collect(Collectors.toSet());
+    }
+
+    // For reactive contexts, create a copy with roles populated
+    public User withRoles(Set<Role> newRoles) {
+        User userWithRoles = new User();
+        userWithRoles.id = this.id;
+        userWithRoles.username = this.username;
+        userWithRoles.email = this.email;
+        userWithRoles.password = this.password;
+        userWithRoles.isActive = this.isActive;
+        userWithRoles.createdAt = this.createdAt;
+        userWithRoles.lastLogin = this.lastLogin;
+        userWithRoles.roles = newRoles != null ? new HashSet<>(newRoles) : new HashSet<>();
+        return userWithRoles;
     }
 
     @Override
@@ -146,6 +169,7 @@ public class User implements UserDetails {
                 ", email='" + email + '\'' +
                 ", isActive=" + isActive +
                 ", createdAt=" + createdAt +
+                ", rolesCount=" + (roles != null ? roles.size() : 0) +
                 '}';
     }
 }

@@ -25,12 +25,13 @@ RUN ./mvnw clean package -DskipTests -B
 FROM amazoncorretto:17-alpine AS runtime
 
 # Add security and operational improvements
-RUN apt-get update && apt-get install -y \
+RUN apk add --no-cache \
     curl \
     jq \
-    && rm -rf /var/lib/apt/lists/* \
-    && groupadd -r appuser \
-    && useradd -r -g appuser appuser
+    && addgroup -S appuser \
+    && adduser -S appuser -G appuser
+
+RUN rm -rf /var/lib/apt/lists/* \
 
 WORKDIR /app
 

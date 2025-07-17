@@ -193,7 +193,7 @@ wait_for_services() {
     print_section "Waiting for Services"
 
     echo -e "${YELLOW}⏳ Waiting for database to be ready...${NC}"
-    timeout 60 bash -c 'until docker-compose exec postgresql pg_isready -U knowledge_user -d knowledge_platform; do sleep 2; done'
+    timeout 60 bash -c 'until docker-compose exec postgresql pg_isready -U don -d donpetre; do sleep 2; done'
 
     echo -e "${YELLOW}⏳ Waiting for Redis to be ready...${NC}"
     timeout 30 bash -c 'until docker-compose exec redis redis-cli ping; do sleep 2; done'
@@ -214,7 +214,7 @@ show_status() {
     echo -e "\n${GREEN}🔍 Service Health Checks:${NC}"
 
     # Check database
-    if docker-compose exec postgresql pg_isready -U knowledge_user -d knowledge_platform >/dev/null 2>&1; then
+    if docker-compose exec postgresql pg_isready -U don -d donpetre >/dev/null 2>&1; then
         echo -e "${GREEN}✓ PostgreSQL: Ready${NC}"
     else
         echo -e "${RED}❌ PostgreSQL: Not Ready${NC}"
@@ -251,8 +251,8 @@ ${GREEN}🌐 API Endpoints:${NC}
 
 ${GREEN}📊 Database:${NC}
   • Host: localhost:5432
-  • Database: knowledge_platform
-  • Username: knowledge_user
+  • Database: donpetre
+  • Username: don
 
 ${GREEN}🗄️ Redis:${NC}
   • Host: localhost:6379

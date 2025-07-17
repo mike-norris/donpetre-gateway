@@ -45,7 +45,6 @@ public class SecurityConfig {
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
         return http
                 .csrf(csrf -> csrf.disable())
-                .cors(cors -> cors.configurationSource(exchange -> null)) // Use CorsWebFilter
                 .authorizeExchange(exchanges -> exchanges
                         // Public endpoints
                         .pathMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/authenticate").permitAll()
