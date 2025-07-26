@@ -1,4 +1,4 @@
-# application.yml - Clean configuration for DonPetre API Gateway
+# application.yml - Fixed R2DBC configuration
 server:
   port: 8080
   shutdown: graceful
@@ -12,9 +12,9 @@ spring:
 
   # R2DBC Configuration (replaces JPA)
   r2dbc:
-    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:donpetre}
-    username: ${DB_USERNAME:don}
-    password: ${DB_PASSWORD:don_pass}
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/donpetre #${DB_NAME:donpetre}
+    username: don #${DB_USERNAME:don}
+    password: don_pass #${DB_PASSWORD:don_pass}
     pool:
       initial-size: 5
       max-size: 20
@@ -22,9 +22,9 @@ spring:
 
   # Flyway for database migrations
   flyway:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:donpetre}
-    user: ${DB_USERNAME:don}
-    password: ${DB_PASSWORD:don_pass}
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/donpetre #${DB_NAME:donpetre}
+    user: don #${DB_USERNAME:don}
+    password: don_pass #${DB_PASSWORD:don_pass}url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:donpetre}
     baseline-on-migrate: true
     locations: classpath:db/migration
 
@@ -201,7 +201,7 @@ open-range-labs:
         auto-generate-secret: false  # Never auto-generate in production
 
 ---
-# Docker Profile
+# Docker Profile - FIXED: Include database credentials
 spring:
   config:
     activate:
@@ -209,9 +209,13 @@ spring:
 
   r2dbc:
     url: r2dbc:postgresql://postgresql:5432/donpetre
+    username: don
+    password: don_pass
 
   flyway:
     url: jdbc:postgresql://postgresql:5432/donpetre
+    user: don
+    password: don_pass
 
   data:
     redis:

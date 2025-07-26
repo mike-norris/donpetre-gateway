@@ -21,23 +21,34 @@ chmod 700 "$SECRETS_DIR"
 
 echo -e "${GREEN}🔐 Generating secure secrets for JWT and database...${NC}"
 
-# Function to generate secure random string
-generate_secret() {
+# Function to generate secure JWT secret (hex format - no spaces or special chars)
+generate_jwt_secret() {
+    local output_file=$1
+    local bytes=$2
+
+    # Generate hex secret (guaranteed no spaces or special characters)
+    openssl rand -hex "$bytes" > "$output_file"
+    chmod 600 "$output_file"
+    echo -e "${GREEN}✓ Generated JWT secret: $output_file ($(($bytes * 2)) hex chars)${NC}"
+}
+
+# Function to generate secure random string for other secrets
+generate_secure_string() {
     local length=$1
     local output_file=$2
 
-    # Generate cryptographically secure random bytes and encode as base64
-    openssl rand -base64 $length | tr -d "=+/" | cut -c1-$length > "$output_file"
+    # Generate base64 and clean it up to avoid problematic characters
+    openssl rand -base64 $((length * 3 / 4)) | tr -d "=+/\n " | cut -c1-$length > "$output_file"
     chmod 600 "$output_file"
-    echo -e "${GREEN}✓ Generated secret: $output_file${NC}"
+    echo -e "${GREEN}✓ Generated secure string: $output_file (${length} chars)${NC}"
 }
 
 # Function to generate database password
 generate_db_password() {
     local output_file="$SECRETS_DIR/db_password.txt"
 
-    # Generate a 32-character password with mixed case, numbers, and safe symbols
-    openssl rand -base64 32 | tr -d "=+/" | cut -c1-32 > "$output_file"
+    # Generate a 32-character password with alphanumeric characters only
+    openssl rand -base64 32 | tr -d "=+/\n " | cut -c1-32 > "$output_file"
     chmod 600 "$output_file"
     echo -e "${GREEN}✓ Generated database password: $output_file${NC}"
 }
@@ -68,6 +79,12 @@ validate_secret() {
         return 1
     fi
 
+    # Check for spaces (which cause Docker issues)
+    if grep -q " " "$secret_file"; then
+        echo -e "${RED}❌ Secret contains spaces: $secret_file${NC}"
+        return 1
+    fi
+
     echo -e "${GREEN}✓ Secret validation passed: $secret_file${NC}"
     return 0
 }
@@ -84,21 +101,21 @@ main() {
     # Backup existing secrets
     backup_existing_secrets
 
-    # Generate database password (32 characters)
+    # Generate database password (32 characters, alphanumeric)
     echo -e "${GREEN}📊 Generating database password...${NC}"
     generate_db_password
 
-    # Generate JWT primary secret (64 bytes for HS512)
-    echo -e "${GREEN}🔑 Generating JWT primary secret...${NC}"
-    generate_secret 88 "$SECRETS_DIR/jwt_secret.txt"  # 88 base64 chars ≈ 64 bytes
+    # Generate JWT primary secret (64 bytes = 128 hex characters for HS512)
+    echo -e "${GREEN}🔑 Generating JWT primary secret (128 hex chars for 64 bytes)...${NC}"
+    generate_jwt_secret "$SECRETS_DIR/jwt_secret.txt" 64
 
     # Generate JWT backup secret for key rotation
     echo -e "${GREEN}🔄 Generating JWT backup secret...${NC}"
-    generate_secret 88 "$SECRETS_DIR/jwt_backup_secret.txt"
+    generate_jwt_secret "$SECRETS_DIR/jwt_backup_secret.txt" 64
 
-    # Generate Redis password (optional)
+    # Generate Redis password (32 characters, clean)
     echo -e "${GREEN}🗄️  Generating Redis password...${NC}"
-    generate_secret 32 "$SECRETS_DIR/redis_password.txt"
+    generate_secure_string 32 "$SECRETS_DIR/redis_password.txt"
 
     # Validate generated secrets
     echo -e "${GREEN}✅ Validating generated secrets...${NC}"
@@ -125,6 +142,12 @@ main() {
     echo -e "   2. Update your environment variables or docker-compose.yml"
     echo -e "   3. Test the application with new secrets"
     echo -e "   4. Remove old secrets after successful deployment"
+    echo ""
+    echo -e "${GREEN}📝 Export commands for immediate use:${NC}"
+    echo -e "   export JWT_SECRET_KEY=\"\$(cat $SECRETS_DIR/jwt_secret.txt)\""
+    echo -e "   export JWT_BACKUP_SECRET=\"\$(cat $SECRETS_DIR/jwt_backup_secret.txt)\""
+    echo -e "   export DB_PASSWORD=\"\$(cat $SECRETS_DIR/db_password.txt)\""
+    echo -e "   export REDIS_PASSWORD=\"\$(cat $SECRETS_DIR/redis_password.txt)\""
 }
 
 # Help function
@@ -142,6 +165,12 @@ show_help() {
     echo "  $0                    # Generate secrets interactively"
     echo "  $0 --force           # Force regenerate all secrets"
     echo "  $0 --validate        # Validate existing secrets"
+    echo ""
+    echo "🔐 JWT Secret Format:"
+    echo "  • Primary & Backup: 128 hex characters (64 bytes for HS512)"
+    echo "  • Database: 32 alphanumeric characters"
+    echo "  • Redis: 32 alphanumeric characters"
+    echo "  • All secrets are free of spaces and special characters"
 }
 
 # Parse command line arguments
