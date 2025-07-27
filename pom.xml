@@ -23,7 +23,7 @@
 
     <properties>
         <java.version>17</java.version>
-        <spring-cloud.version>2024.0.0</spring-cloud.version>
+        <spring-cloud.version>2025.0.0</spring-cloud.version>
     </properties>
 
     <dependencies>
@@ -86,10 +86,14 @@
             <artifactId>r2dbc-postgresql</artifactId>
         </dependency>
 
-        <!-- Flyway for schema migrations (since R2DBC doesn't auto-generate) -->
+        <!-- Flyway for schema migrations - UPDATED VERSION -->
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
         <!-- PostgreSQL driver for Flyway -->
         <dependency>
@@ -186,10 +190,11 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
 
-            <!-- Flyway plugin for database migrations -->
+            <!-- Flyway plugin for database migrations - UPDATED VERSION -->
             <plugin>
                 <groupId>org.flywaydb</groupId>
                 <artifactId>flyway-maven-plugin</artifactId>
+                <version>${flyway.version}</version>
                 <configuration>
                     <url>jdbc:postgresql://localhost:5432/donpetre</url>
                     <user>don</user>

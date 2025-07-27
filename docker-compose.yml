@@ -5,7 +5,7 @@ services:
     container_name: donpetre-db
     environment:
       POSTGRES_DB: donpetre
-      POSTGRES_USER: don
+      POSTGRES_USER: ${DB_USER:-don}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-don_pass}
     ports:
       - "5432:5432"
@@ -50,7 +50,7 @@ services:
       DB_HOST: postgresql
       DB_PORT: 5432
       DB_NAME: donpetre
-      DB_USERNAME: don
+      DB_USERNAME: ${DB_USER:-don}
       DB_PASSWORD: ${DB_PASSWORD:-don_pass}
 
       # Redis Configuration
