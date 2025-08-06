@@ -81,3 +81,19 @@ SELECT u.id, r.id
 FROM users u, roles r
 WHERE u.username = 'testuser' AND r.name = 'USER'
 ON CONFLICT (user_id, role_id) DO NOTHING;
+
+-- Create knowledge_sources table (referenced by ingestion service)
+CREATE TABLE IF NOT EXISTS knowledge_sources (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    type VARCHAR(50) NOT NULL,
+    configuration JSONB NOT NULL,
+    last_sync TIMESTAMP,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Create indexes for knowledge_sources
+CREATE INDEX IF NOT EXISTS idx_knowledge_sources_type ON knowledge_sources(type);
+CREATE INDEX IF NOT EXISTS idx_knowledge_sources_active ON knowledge_sources(is_active);
+CREATE INDEX IF NOT EXISTS idx_knowledge_sources_last_sync ON knowledge_sources(last_sync);

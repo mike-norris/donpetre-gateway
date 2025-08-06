@@ -12,8 +12,8 @@ spring:
   # R2DBC Configuration (replaces JPA)
   r2dbc:
     url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:donpetre}
-    username: ${DB_USERNAME:don}
-    password: ${DB_PASSWORD:don_pass}
+    username: ${DB_USERNAME:donpetre}
+    password: ${DB_PASSWORD:donpetre_pass}
     pool:
       initial-size: 5
       max-size: 20
@@ -22,8 +22,8 @@ spring:
   # Flyway for database migrations
   flyway:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:donpetre}
-    user: ${DB_USERNAME:don}
-    password: ${DB_PASSWORD:don_pass}
+    user: ${DB_USERNAME:donpetre}
+    password: ${DB_PASSWORD:donpetre_pass}
     baseline-on-migrate: true
     locations: classpath:db/migration
 
@@ -210,13 +210,13 @@ spring:
 
   r2dbc:
     url: r2dbc:postgresql://postgresql:5432/donpetre
-    username: don
-    password: don_pass
+    username: ${DB_USERNAME:donpetre}
+    password: ${DB_PASSWORD:donpetre_pass}
 
   flyway:
     url: jdbc:postgresql://postgresql:5432/donpetre
-    user: don
-    password: don_pass
+    user: ${DB_USERNAME:donpetre}
+    password: ${DB_PASSWORD:donpetre_pass}
 
   data:
     redis:

@@ -8,18 +8,19 @@ WORKDIR /app
 COPY mvnw .
 COPY .mvn .mvn
 COPY pom.xml .
+COPY donpetre-gateway/pom.xml donpetre-gateway/
 
 # Make mvnw executable
 RUN chmod +x mvnw
 
 # Download dependencies (this layer will be cached unless pom.xml changes)
-RUN ./mvnw dependency:go-offline -B
+RUN ./mvnw dependency:go-offline -B -f donpetre-gateway/pom.xml
 
 # Copy source code
-COPY src src
+COPY donpetre-gateway/src donpetre-gateway/src
 
 # Build the application
-RUN ./mvnw clean package -DskipTests -B
+RUN ./mvnw clean package -DskipTests -B -f donpetre-gateway/pom.xml
 
 # Stage 2: Create the runtime image
 FROM amazoncorretto:17-alpine AS runtime
@@ -36,7 +37,7 @@ RUN rm -rf /var/lib/apt/lists/* \
 WORKDIR /app
 
 # Copy the JAR from builder stage
-COPY --from=builder /app/target/api-gateway-*.jar app.jar
+COPY --from=builder /app/donpetre-gateway/target/donpetre-gateway.jar app.jar
 
 # Create directories for logs and secrets
 RUN mkdir -p /app/logs /app/secrets \
