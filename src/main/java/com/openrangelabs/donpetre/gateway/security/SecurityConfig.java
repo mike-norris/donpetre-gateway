@@ -47,7 +47,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .authorizeExchange(exchanges -> exchanges
                         // Public endpoints
-                        .pathMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/authenticate").permitAll()
+                        .pathMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/authenticate", "/api/auth/login").permitAll()
                         .pathMatchers(HttpMethod.GET, "/actuator/health", "/health", "/fallback").permitAll()
                         .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 

@@ -73,12 +73,71 @@ spring:
                     name: knowledge-ingestion
                     fallbackUri: forward:/fallback/knowledge-ingestion
 
-            - id: knowledge-management-route
+            - id: knowledge-management-items-route
               uri: http://${MANAGEMENT_SERVICE_HOST:localhost}:${MANAGEMENT_SERVICE_PORT:8082}
               predicates:
-                - Path=/api/knowledge/**
+                - Path=/api/knowledge-items/**
               filters:
-                - StripPrefix=2
+                - name: CircuitBreaker
+                  args:
+                    name: knowledge-management
+                    fallbackUri: forward:/fallback/knowledge-management
+
+            - id: knowledge-management-sources-route
+              uri: http://${MANAGEMENT_SERVICE_HOST:localhost}:${MANAGEMENT_SERVICE_PORT:8082}
+              predicates:
+                - Path=/api/knowledge-sources/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: knowledge-management
+                    fallbackUri: forward:/fallback/knowledge-management
+
+            - id: knowledge-management-tags-route
+              uri: http://${MANAGEMENT_SERVICE_HOST:localhost}:${MANAGEMENT_SERVICE_PORT:8082}
+              predicates:
+                - Path=/api/tags/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: knowledge-management
+                    fallbackUri: forward:/fallback/knowledge-management
+
+            - id: knowledge-management-users-route
+              uri: http://${MANAGEMENT_SERVICE_HOST:localhost}:${MANAGEMENT_SERVICE_PORT:8082}
+              predicates:
+                - Path=/api/users/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: knowledge-management
+                    fallbackUri: forward:/fallback/knowledge-management
+
+            - id: knowledge-management-analytics-route
+              uri: http://${MANAGEMENT_SERVICE_HOST:localhost}:${MANAGEMENT_SERVICE_PORT:8082}
+              predicates:
+                - Path=/api/analytics/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: knowledge-management
+                    fallbackUri: forward:/fallback/knowledge-management
+
+            - id: knowledge-management-export-route
+              uri: http://${MANAGEMENT_SERVICE_HOST:localhost}:${MANAGEMENT_SERVICE_PORT:8082}
+              predicates:
+                - Path=/api/export/**,/api/import/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: knowledge-management
+                    fallbackUri: forward:/fallback/knowledge-management
+
+            - id: knowledge-management-admin-route
+              uri: http://${MANAGEMENT_SERVICE_HOST:localhost}:${MANAGEMENT_SERVICE_PORT:8082}
+              predicates:
+                - Path=/api/admin/**
+              filters:
                 - name: CircuitBreaker
                   args:
                     name: knowledge-management
@@ -95,16 +154,6 @@ spring:
                     name: search-service
                     fallbackUri: forward:/fallback/search-service
 
-            - id: auth-route
-              uri: http://localhost:8080
-              predicates:
-                - Path=/api/auth/**
-              filters:
-                - name: RequestRateLimiter
-                  args:
-                    redis-rate-limiter.replenishRate: 10
-                    redis-rate-limiter.burstCapacity: 20
-                    key-resolver: "#{@userKeyResolver}"
 
 # Actuator Configuration
 management:
@@ -221,6 +270,12 @@ spring:
   data:
     redis:
       host: redis
+
+open-range-labs:
+  donpetre:
+    security:
+      cors:
+        allowed-origins: "http://localhost:3000,http://localhost:8080,http://localhost:8084"
 
 logging:
   level:

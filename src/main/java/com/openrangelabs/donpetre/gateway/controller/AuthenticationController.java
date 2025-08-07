@@ -54,9 +54,16 @@ public class AuthenticationController {
     @PostMapping("/authenticate")
     public Mono<ResponseEntity<AuthenticationResponse>> authenticate(
             @Valid @RequestBody AuthenticationRequest request) {
+        System.out.println("Authentication request received for user: " + request.getUsername());
         return authenticationService.authenticate(request)
-                .map(ResponseEntity::ok)
+                .doOnNext(response -> System.out.println("Authentication successful for user: " + response.getUsername() + ", token length: " + (response.getAccessToken() != null ? response.getAccessToken().length() : 0)))
+                .map(response -> {
+                    System.out.println("Returning response with body: " + (response != null));
+                    return ResponseEntity.ok(response);
+                })
                 .onErrorResume(RuntimeException.class, e -> {
+                    System.err.println("Authentication failed: " + e.getMessage());
+                    e.printStackTrace();
                     Map<String, Object> errorResponse = Map.of(
                             "message", "Invalid username or password",
                             "timestamp", LocalDateTime.now(),
@@ -64,6 +71,15 @@ public class AuthenticationController {
                     );
                     return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(null));
                 });
+    }
+
+    /**
+     * Login endpoint (alias for authenticate) - for frontend compatibility
+     */
+    @PostMapping("/login")
+    public Mono<ResponseEntity<AuthenticationResponse>> login(
+            @Valid @RequestBody AuthenticationRequest request) {
+        return authenticate(request);
     }
 
     /**
