@@ -83,6 +83,18 @@ spring:
                     name: knowledge-management
                     fallbackUri: forward:/fallback/knowledge-management
 
+            - id: knowledge-management-general-route
+              uri: http://${MANAGEMENT_SERVICE_HOST:localhost}:${MANAGEMENT_SERVICE_PORT:8082}
+              predicates:
+                - Path=/api/knowledge/**
+              filters:
+                - StripPrefix=1
+                - RewritePath=/knowledge/?(?<segment>.*), /knowledge-items/$\{segment}
+                - name: CircuitBreaker
+                  args:
+                    name: knowledge-management
+                    fallbackUri: forward:/fallback/knowledge-management
+
             - id: knowledge-management-sources-route
               uri: http://${MANAGEMENT_SERVICE_HOST:localhost}:${MANAGEMENT_SERVICE_PORT:8082}
               predicates:
