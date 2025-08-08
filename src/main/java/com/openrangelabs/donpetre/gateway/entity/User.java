@@ -1,5 +1,6 @@
 package com.openrangelabs.donpetre.gateway.entity;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Transient;
 import org.springframework.data.relational.core.mapping.Column;
@@ -17,6 +18,7 @@ import java.util.stream.Collectors;
  * Implements Spring Security UserDetails interface
  * Note: R2DBC doesn't support complex relationships like JPA, so roles are handled separately
  */
+@Slf4j
 @Table("users")
 public class User implements UserDetails {
 

@@ -57,10 +57,10 @@ CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expiry ON refresh_tokens(expiry_da
 CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON user_roles(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_roles_role_id ON user_roles(role_id);
 
--- Create a default admin user (password: admin123 - change in production!)
--- Password is BCrypt hash of "admin123"
+-- Create a default admin user (password: password123 - change in production!)
+-- Password is BCrypt hash of "password123"
 INSERT INTO users (username, email, password, is_active) VALUES
-    ('admin', 'admin@donpetre.com', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LeRgHZKo4Zr6LdDqK', true)
+    ('admin', 'admin@donpetre.com', '$2a$12$.SiNRaCuL/8jt.3i4Kt1hOfRc9shFqfJ8yaBaTcrAvMhYto9FxEDm', true)
 ON CONFLICT (username) DO NOTHING;
 
 -- Assign admin role to admin user
@@ -72,7 +72,7 @@ ON CONFLICT (user_id, role_id) DO NOTHING;
 
 -- Create a test user (password: user123 - for development only)
 INSERT INTO users (username, email, password, is_active) VALUES
-    ('testuser', 'test@donpetre.com', '$2a$12$8.xsuGNJIHj/ZzNOVNWe.uuKBZ.wE/iGQD.LZJ5k5kGq6qvAqRJXm', true)
+    ('testuser', 'test@donpetre.com', '$2a$12$.SiNRaCuL/8jt.3i4Kt1hOfRc9shFqfJ8yaBaTcrAvMhYto9FxEDm', true)
 ON CONFLICT (username) DO NOTHING;
 
 -- Assign user role to test user

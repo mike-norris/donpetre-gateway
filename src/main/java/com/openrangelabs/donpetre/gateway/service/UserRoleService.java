@@ -4,6 +4,7 @@ import com.openrangelabs.donpetre.gateway.entity.Role;
 import com.openrangelabs.donpetre.gateway.entity.User;
 import com.openrangelabs.donpetre.gateway.repository.RoleRepository;
 import com.openrangelabs.donpetre.gateway.repository.UserRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
 import org.springframework.data.relational.core.query.Criteria;
@@ -20,6 +21,7 @@ import java.util.UUID;
  * Service to handle User-Role relationships in R2DBC
  * Since R2DBC doesn't support @ManyToMany, we manage the junction table manually
  */
+@Slf4j
 @Service
 public class UserRoleService {
 
@@ -44,24 +46,54 @@ public class UserRoleService {
      * Load user with all their roles populated
      */
     public Mono<User> loadUserWithRoles(UUID userId) {
+        log.debug("UserRoleService.loadUserWithRoles called for userId: {}", userId);
         return userRepository.findById(userId)
-                .flatMap(user ->
-                        roleRepository.findRolesByUserId(userId)
-                                .collect(java.util.stream.Collectors.toSet())
-                                .map(user::withRoles)
-                );
+                .doOnNext(user -> log.debug("User found by ID: {}, isActive: {}", user.getUsername(), user.getIsActive()))
+                .doOnError(error -> log.error("Error finding user by ID {}: {}", userId, error.getMessage()))
+                .flatMap(user -> {
+                    log.debug("Loading roles for user: {}", user.getUsername());
+                    return roleRepository.findRolesByUserId(userId)
+                            .doOnNext(role -> log.debug("Role found for user {}: {}", user.getUsername(), role.getName()))
+                            .collect(java.util.stream.Collectors.toSet())
+                            .doOnNext(roles -> log.debug("Total roles loaded for user {}: {}", user.getUsername(), roles.size()))
+                            .map(user::withRoles)
+                            .doOnNext(userWithRoles -> log.debug("User with roles created: {}, roles: {}", 
+                                userWithRoles.getUsername(), userWithRoles.getRoles().size()));
+                })
+                .doOnError(error -> log.error("Error loading user with roles for userId {}: {}", userId, error.getMessage()));
     }
 
     /**
      * Load user with roles by username
      */
     public Mono<User> loadUserWithRolesByUsername(String username) {
+        log.debug("UserRoleService.loadUserWithRolesByUsername called for username: {}", username);
         return userRepository.findByUsername(username)
-                .flatMap(user ->
-                        roleRepository.findRolesByUserId(user.getId())
-                                .collect(java.util.stream.Collectors.toSet())
-                                .map(user::withRoles)
-                );
+                .doOnNext(user -> log.debug("User found by username: {}, ID: {}, isActive: {}", 
+                    user.getUsername(), user.getId(), user.getIsActive()))
+                .doOnError(error -> log.error("Error finding user by username {}: {}", username, error.getMessage()))
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("User not found by username: {}", username);
+                    return Mono.empty();
+                }))
+                .flatMap(user -> {
+                    log.debug("Loading roles for user: {} (ID: {})", user.getUsername(), user.getId());
+                    return roleRepository.findRolesByUserId(user.getId())
+                            .doOnNext(role -> log.debug("Role found for user {}: {} (ID: {})", 
+                                user.getUsername(), role.getName(), role.getId()))
+                            .collect(java.util.stream.Collectors.toSet())
+                            .doOnNext(roles -> log.debug("Total roles loaded for user {}: {}", user.getUsername(), roles.size()))
+                            .map(user::withRoles)
+                            .doOnNext(userWithRoles -> {
+                                log.debug("User with roles created: {}, roles: {}, authorities: {}", 
+                                    userWithRoles.getUsername(), 
+                                    userWithRoles.getRoles().size(),
+                                    userWithRoles.getAuthorities().size());
+                                userWithRoles.getRoles().forEach(role -> 
+                                    log.debug("  - Role: {}", role.getName()));
+                            });
+                })
+                .doOnError(error -> log.error("Error loading user with roles for username {}: {}", username, error.getMessage()));
     }
 
     /**

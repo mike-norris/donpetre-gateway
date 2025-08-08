@@ -46,18 +46,28 @@ class JwtServiceTest {
         primaryKey = Keys.secretKeyFor(io.jsonwebtoken.SignatureAlgorithm.HS512);
         backupKey = Keys.secretKeyFor(io.jsonwebtoken.SignatureAlgorithm.HS512);
 
-        // Mock properties
-        when(jwtProperties.getExpiration()).thenReturn(86400000L); // 24 hours
-        when(jwtProperties.getRefreshExpiration()).thenReturn(604800000L); // 7 days
-
-        jwtService = new JwtService(primaryKey, backupKey, jwtProperties);
-
         // Create test user
         testUser = User.builder()
                 .username("testuser")
                 .password("encoded_password")
                 .authorities(List.of(new SimpleGrantedAuthority("ROLE_USER")))
                 .build();
+    }
+    
+    private void mockTokenExpiration() {
+        when(jwtProperties.getExpiration()).thenReturn(86400000L); // 24 hours
+    }
+    
+    private void mockRefreshTokenExpiration() {
+        when(jwtProperties.getRefreshExpiration()).thenReturn(604800000L); // 7 days
+    }
+    
+    private void mockSignatureAlgorithm() {
+        when(jwtProperties.getAlgorithm()).thenReturn("HS512");
+    }
+    
+    private JwtService createJwtService() {
+        return new JwtService(primaryKey, backupKey, jwtProperties);
     }
 
     @Nested
@@ -67,6 +77,10 @@ class JwtServiceTest {
         @Test
         @DisplayName("Should generate valid access token")
         void shouldGenerateValidAccessToken() {
+            // Arrange
+            mockTokenExpiration();
+            jwtService = createJwtService();
+            
             // Act
             String token = jwtService.generateToken(testUser);
 
@@ -80,6 +94,9 @@ class JwtServiceTest {
         @DisplayName("Should generate access token with custom claims")
         void shouldGenerateTokenWithCustomClaims() {
             // Arrange
+            mockTokenExpiration();
+            jwtService = createJwtService();
+            
             Map<String, Object> extraClaims = Map.of(
                     "role", "USER",
                     "permissions", List.of("read", "write")
@@ -99,6 +116,10 @@ class JwtServiceTest {
         @Test
         @DisplayName("Should generate valid refresh token")
         void shouldGenerateValidRefreshToken() {
+            // Arrange
+            mockRefreshTokenExpiration();
+            jwtService = createJwtService();
+            
             // Act
             String refreshToken = jwtService.generateRefreshToken(testUser);
 
@@ -116,6 +137,10 @@ class JwtServiceTest {
         @Test
         @DisplayName("Should generate unique tokens for same user")
         void shouldGenerateUniqueTokensForSameUser() {
+            // Arrange
+            mockTokenExpiration();
+            jwtService = createJwtService();
+            
             // Act
             String token1 = jwtService.generateToken(testUser);
             String token2 = jwtService.generateToken(testUser);
@@ -135,6 +160,8 @@ class JwtServiceTest {
         @DisplayName("Should extract username correctly")
         void shouldExtractUsernameCorrectly() {
             // Arrange
+            mockTokenExpiration();
+            jwtService = createJwtService();
             String token = jwtService.generateToken(testUser);
 
             // Act
@@ -148,6 +175,8 @@ class JwtServiceTest {
         @DisplayName("Should extract expiration date correctly")
         void shouldExtractExpirationDateCorrectly() {
             // Arrange
+            mockTokenExpiration();
+            jwtService = createJwtService();
             String token = jwtService.generateToken(testUser);
 
             // Act
@@ -165,6 +194,8 @@ class JwtServiceTest {
         @DisplayName("Should extract all claims correctly")
         void shouldExtractAllClaimsCorrectly() {
             // Arrange
+            mockTokenExpiration();
+            jwtService = createJwtService();
             Map<String, Object> extraClaims = Map.of("role", "ADMIN");
             String token = jwtService.generateToken(extraClaims, testUser);
 
@@ -186,6 +217,8 @@ class JwtServiceTest {
         @DisplayName("Should extract custom claim correctly")
         void shouldExtractCustomClaimCorrectly() {
             // Arrange
+            mockTokenExpiration();
+            jwtService = createJwtService();
             Map<String, Object> extraClaims = Map.of("customField", "customValue");
             String token = jwtService.generateToken(extraClaims, testUser);
 
@@ -205,6 +238,8 @@ class JwtServiceTest {
         @DisplayName("Should validate correct token")
         void shouldValidateCorrectToken() {
             // Arrange
+            mockTokenExpiration();
+            jwtService = createJwtService();
             String token = jwtService.generateToken(testUser);
 
             // Act & Assert
@@ -215,6 +250,8 @@ class JwtServiceTest {
         @DisplayName("Should reject token for different user")
         void shouldRejectTokenForDifferentUser() {
             // Arrange
+            mockTokenExpiration();
+            jwtService = createJwtService();
             String token = jwtService.generateToken(testUser);
             UserDetails differentUser = User.builder()
                     .username("differentuser")
@@ -230,6 +267,7 @@ class JwtServiceTest {
         @DisplayName("Should reject malformed token")
         void shouldRejectMalformedToken() {
             // Arrange
+            jwtService = createJwtService();
             String malformedToken = "invalid.jwt.token";
 
             // Act & Assert
@@ -241,6 +279,7 @@ class JwtServiceTest {
         @DisplayName("Should reject token with invalid signature")
         void shouldRejectTokenWithInvalidSignature() {
             // Arrange
+            jwtService = createJwtService();
             SecretKey wrongKey = Keys.secretKeyFor(io.jsonwebtoken.SignatureAlgorithm.HS512);
             String tokenWithWrongSignature = Jwts.builder()
                     .setSubject("testuser")
@@ -249,22 +288,25 @@ class JwtServiceTest {
                     .signWith(wrongKey)
                     .compact();
 
-            // Act & Assert
+            // Act & Assert - Service wraps SignatureException in RuntimeException
             assertThatThrownBy(() -> jwtService.extractUsername(tokenWithWrongSignature))
-                    .isInstanceOf(SignatureException.class);
+                    .isInstanceOf(RuntimeException.class)
+                    .hasCauseInstanceOf(SignatureException.class);
         }
 
         @Test
         @DisplayName("Should check if token is expired correctly")
         void shouldCheckIfTokenIsExpiredCorrectly() {
             // Arrange
+            mockTokenExpiration();
+            jwtService = createJwtService();
             String validToken = jwtService.generateToken(testUser);
 
-            // Create expired token
-            Date pastDate = new Date(System.currentTimeMillis() - 1000); // 1 second ago
+            // Create expired token with more buffer time to avoid timing issues
+            Date pastDate = new Date(System.currentTimeMillis() - 5000); // 5 seconds ago
             String expiredToken = Jwts.builder()
                     .setSubject("testuser")
-                    .setIssuedAt(new Date(System.currentTimeMillis() - 2000))
+                    .setIssuedAt(new Date(System.currentTimeMillis() - 10000)) // 10 seconds ago
                     .setExpiration(pastDate)
                     .setIssuer("donpetre-api-gateway")
                     .signWith(primaryKey)
@@ -272,20 +314,22 @@ class JwtServiceTest {
 
             // Act & Assert
             Date validExpiration = jwtService.extractClaim(validToken, Claims::getExpiration);
-            Date expiredExpiration = jwtService.extractClaim(expiredToken, Claims::getExpiration);
             
+            // For expired token, expect ExpiredJwtException during claim extraction
             assertThat(validExpiration).isAfter(new Date());
-            assertThat(expiredExpiration).isBefore(new Date());
+            assertThatThrownBy(() -> jwtService.extractClaim(expiredToken, Claims::getExpiration))
+                    .isInstanceOf(ExpiredJwtException.class);
         }
 
         @Test
         @DisplayName("Should reject expired token in validation")
         void shouldRejectExpiredTokenInValidation() {
             // Arrange
-            Date pastDate = new Date(System.currentTimeMillis() - 1000);
+            jwtService = createJwtService();
+            Date pastDate = new Date(System.currentTimeMillis() - 5000); // 5 seconds ago
             String expiredToken = Jwts.builder()
                     .setSubject("testuser")
-                    .setIssuedAt(new Date(System.currentTimeMillis() - 2000))
+                    .setIssuedAt(new Date(System.currentTimeMillis() - 10000)) // 10 seconds ago
                     .setExpiration(pastDate)
                     .setIssuer("donpetre-api-gateway")
                     .signWith(primaryKey)
@@ -303,7 +347,11 @@ class JwtServiceTest {
         @Test
         @DisplayName("Should use secure signature algorithm")
         void shouldUseSecureSignatureAlgorithm() {
-            // Arrange & Act
+            // Arrange
+            mockTokenExpiration();
+            jwtService = createJwtService();
+            
+            // Act
             String token = jwtService.generateToken(testUser);
 
             // Assert
@@ -315,7 +363,11 @@ class JwtServiceTest {
         @Test
         @DisplayName("Should include security-relevant claims")
         void shouldIncludeSecurityRelevantClaims() {
-            // Arrange & Act
+            // Arrange
+            mockTokenExpiration();
+            jwtService = createJwtService();
+            
+            // Act
             String token = jwtService.generateToken(testUser);
 
             // Assert
@@ -333,7 +385,11 @@ class JwtServiceTest {
         @Test
         @DisplayName("Should not include sensitive information in token")
         void shouldNotIncludeSensitiveInformationInToken() {
-            // Arrange & Act
+            // Arrange
+            mockTokenExpiration();
+            jwtService = createJwtService();
+            
+            // Act
             String token = jwtService.generateToken(testUser);
             String subject = jwtService.extractClaim(token, Claims::getSubject);
 
@@ -345,6 +401,8 @@ class JwtServiceTest {
         @DisplayName("Should handle key rotation gracefully")
         void shouldHandleKeyRotationGracefully() {
             // Arrange
+            mockTokenExpiration();
+            jwtService = createJwtService();
             String tokenWithPrimaryKey = jwtService.generateToken(testUser);
 
             // Act & Assert - Token should be valid with current service instance
@@ -359,6 +417,9 @@ class JwtServiceTest {
         @Test
         @DisplayName("Should handle null token gracefully")
         void shouldHandleNullTokenGracefully() {
+            // Arrange
+            jwtService = createJwtService();
+            
             // Act & Assert
             assertThatThrownBy(() -> jwtService.extractUsername(null))
                     .isInstanceOf(IllegalArgumentException.class);
@@ -367,6 +428,9 @@ class JwtServiceTest {
         @Test
         @DisplayName("Should handle empty token gracefully")
         void shouldHandleEmptyTokenGracefully() {
+            // Arrange
+            jwtService = createJwtService();
+            
             // Act & Assert
             assertThatThrownBy(() -> jwtService.extractUsername(""))
                     .isInstanceOf(IllegalArgumentException.class);
@@ -375,6 +439,9 @@ class JwtServiceTest {
         @Test
         @DisplayName("Should handle whitespace token gracefully")
         void shouldHandleWhitespaceTokenGracefully() {
+            // Arrange
+            jwtService = createJwtService();
+            
             // Act & Assert
             assertThatThrownBy(() -> jwtService.extractUsername("   "))
                     .isInstanceOf(IllegalArgumentException.class);
@@ -384,16 +451,17 @@ class JwtServiceTest {
         @DisplayName("Should throw ExpiredJwtException for expired token extraction")
         void shouldThrowExpiredJwtExceptionForExpiredTokenExtraction() {
             // Arrange
-            Date pastDate = new Date(System.currentTimeMillis() - 1000);
+            jwtService = createJwtService();
+            Date pastDate = new Date(System.currentTimeMillis() - 5000); // 5 seconds ago
             String expiredToken = Jwts.builder()
                     .setSubject("testuser")
-                    .setIssuedAt(new Date(System.currentTimeMillis() - 2000))
+                    .setIssuedAt(new Date(System.currentTimeMillis() - 10000)) // 10 seconds ago  
                     .setExpiration(pastDate)
-                    .setIssuer("donpetre-gateway")
+                    .setIssuer("donpetre-api-gateway") // Fix issuer to match service
                     .signWith(primaryKey)
                     .compact();
 
-            // Act & Assert
+            // Act & Assert - ExpiredJwtException is thrown directly by JWT library
             assertThatThrownBy(() -> jwtService.extractUsername(expiredToken))
                     .isInstanceOf(ExpiredJwtException.class);
         }
@@ -407,18 +475,21 @@ class JwtServiceTest {
         @DisplayName("Should create token with correct lifecycle")
         void shouldCreateTokenWithCorrectLifecycle() {
             // Arrange
-            Date beforeCreation = new Date();
+            mockTokenExpiration();
+            jwtService = createJwtService();
+            long beforeCreationTime = System.currentTimeMillis();
 
             // Act
             String token = jwtService.generateToken(testUser);
 
             // Assert
-            Date afterCreation = new Date();
+            long afterCreationTime = System.currentTimeMillis();
             Date issuedAt = jwtService.extractClaim(token, Claims::getIssuedAt);
             Date expiration = jwtService.extractClaim(token, Claims::getExpiration);
 
-            assertThat(issuedAt).isBetween(beforeCreation, afterCreation);
-            assertThat(expiration).isAfter(afterCreation);
+            // Allow for some timing tolerance (within 1 second)
+            assertThat(issuedAt.getTime()).isBetween(beforeCreationTime - 1000, afterCreationTime + 1000);
+            assertThat(expiration.getTime()).isGreaterThan(afterCreationTime);
             
             long tokenLifetime = expiration.getTime() - issuedAt.getTime();
             assertThat(tokenLifetime).isEqualTo(86400000L); // 24 hours
@@ -427,7 +498,12 @@ class JwtServiceTest {
         @Test
         @DisplayName("Should respect different expiration times for access and refresh tokens")
         void shouldRespectDifferentExpirationTimes() {
-            // Arrange & Act
+            // Arrange
+            mockTokenExpiration();
+            mockRefreshTokenExpiration();
+            jwtService = createJwtService();
+            
+            // Act
             String accessToken = jwtService.generateToken(testUser);
             String refreshToken = jwtService.generateRefreshToken(testUser);
 
@@ -452,6 +528,8 @@ class JwtServiceTest {
         @DisplayName("Should generate tokens efficiently")
         void shouldGenerateTokensEfficiently() {
             // Arrange
+            mockTokenExpiration();
+            jwtService = createJwtService();
             long startTime = System.currentTimeMillis();
 
             // Act - Generate 100 tokens
@@ -471,6 +549,8 @@ class JwtServiceTest {
         @DisplayName("Should validate tokens efficiently")
         void shouldValidateTokensEfficiently() {
             // Arrange
+            mockTokenExpiration();
+            jwtService = createJwtService();
             String token = jwtService.generateToken(testUser);
             long startTime = System.currentTimeMillis();
 

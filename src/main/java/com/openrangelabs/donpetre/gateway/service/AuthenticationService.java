@@ -10,6 +10,7 @@ import com.openrangelabs.donpetre.gateway.repository.RefreshTokenRepository;
 import com.openrangelabs.donpetre.gateway.repository.RoleRepository;
 import com.openrangelabs.donpetre.gateway.repository.UserRepository;
 import com.openrangelabs.donpetre.gateway.security.JwtService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.ReactiveAuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -28,6 +29,7 @@ import java.util.stream.Collectors;
  * Reactive Authentication service handling user registration, login, and token management
  * Fully reactive implementation using R2DBC repositories
  */
+@Slf4j
 @Service
 public class AuthenticationService {
 
@@ -64,41 +66,81 @@ public class AuthenticationService {
      * Register a new user with default USER role - fully reactive
      */
     public Mono<AuthenticationResponse> register(RegisterRequest request) {
+        log.debug("AuthenticationService.register called for username: {}, email: {}", 
+            request.getUsername(), request.getEmail());
+        
         // Check if username already exists
         return userRepository.existsByUsername(request.getUsername())
+                .doOnNext(exists -> log.debug("Username {} exists: {}", request.getUsername(), exists))
                 .flatMap(usernameExists -> {
                     if (usernameExists) {
+                        log.warn("Registration failed: Username already exists: {}", request.getUsername());
                         return Mono.error(new RuntimeException("Username already exists"));
                     }
                     // Check if email already exists
                     return userRepository.existsByEmail(request.getEmail());
                 })
+                .doOnNext(exists -> log.debug("Email {} exists: {}", request.getEmail(), exists))
                 .flatMap(emailExists -> {
                     if (emailExists) {
+                        log.warn("Registration failed: Email already exists: {}", request.getEmail());
                         return Mono.error(new RuntimeException("Email already exists"));
                     }
+                    log.debug("Creating new user: {}", request.getUsername());
                     // Create the user
                     return createUserReactive(request);
                 })
-                .flatMap(this::generateAuthResponse);
+                .doOnNext(user -> log.debug("User created successfully: {}, roles: {}", 
+                    user.getUsername(), user.getRoles().size()))
+                .flatMap(this::generateAuthResponse)
+                .doOnNext(response -> log.debug("Registration completed for user: {}", response.getUsername()))
+                .doOnError(error -> log.error("Registration failed for user {}: {}", 
+                    request.getUsername(), error.getMessage()));
     }
 
     /**
      * Authenticate existing user and return JWT tokens - fully reactive
      */
     public Mono<AuthenticationResponse> authenticate(AuthenticationRequest request) {
+        log.debug("AuthenticationService.authenticate called for username: {}", request.getUsername());
+        
+        UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
+                request.getUsername(), request.getPassword());
+        log.debug("Created authentication token for user: {}", request.getUsername());
+        
         return authenticationManager
-                .authenticate(new UsernamePasswordAuthenticationToken(
-                        request.getUsername(),
-                        request.getPassword()))
-                .then(userRoleService.loadUserWithRolesByUsername(request.getUsername()))
-                .switchIfEmpty(Mono.error(new RuntimeException("User not found")))
+                .authenticate(authToken)
+                .doOnNext(auth -> log.debug("Authentication manager success for user: {}, authorities: {}", 
+                    request.getUsername(), auth.getAuthorities()))
+                .doOnError(error -> log.error("Authentication manager failed for user {}: {} - {}", 
+                    request.getUsername(), error.getClass().getSimpleName(), error.getMessage()))
+                .then(Mono.defer(() -> {
+                    log.debug("Loading user with roles after authentication: {}", request.getUsername());
+                    return userRoleService.loadUserWithRolesByUsername(request.getUsername());
+                }))
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.error("User not found after successful authentication: {}", request.getUsername());
+                    return Mono.error(new RuntimeException("User not found"));
+                }))
+                .doOnNext(user -> log.debug("User loaded after authentication: {}, roles: {}, isActive: {}", 
+                    user.getUsername(), user.getRoles().size(), user.getIsActive()))
                 .flatMap(user -> {
+                    log.debug("Updating last login time for user: {}", user.getUsername());
                     // Update last login time
                     user.setLastLogin(LocalDateTime.now());
-                    return userRepository.save(user);
+                    return userRepository.save(user)
+                            .doOnNext(savedUser -> log.debug("Last login updated for user: {}", savedUser.getUsername()))
+                            .doOnError(error -> log.error("Failed to update last login for user {}: {}", 
+                                user.getUsername(), error.getMessage()));
                 })
-                .flatMap(this::generateAuthResponse);
+                .flatMap(user -> {
+                    log.debug("Generating auth response for user: {}", user.getUsername());
+                    return generateAuthResponse(user);
+                })
+                .doOnNext(response -> log.debug("Authentication completed for user: {}, token length: {}", 
+                    response.getUsername(), response.getAccessToken() != null ? response.getAccessToken().length() : 0))
+                .doOnError(error -> log.error("Authentication failed for user {}: {} - {}", 
+                    request.getUsername(), error.getClass().getSimpleName(), error.getMessage()));
     }
 
     /**

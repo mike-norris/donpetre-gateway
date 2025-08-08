@@ -3,6 +3,7 @@ package com.openrangelabs.donpetre.gateway.config;
 
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,6 +18,7 @@ import java.util.Base64;
  * JWT Security Configuration with proper secret management
  * Handles secret generation, validation, and rotation
  */
+@Slf4j
 @Configuration
 public class JwtSecurityConfig {
 
@@ -77,14 +79,14 @@ public class JwtSecurityConfig {
                 }
                 return Keys.hmacShaKeyFor(keyBytes);
             } catch (Exception e) {
-                System.out.println("Backup secret validation failed, using primary secret as backup: " + e.getMessage());
+                log.info("Backup secret validation failed, using primary secret as backup: " + e.getMessage());
             }
         }
 
         // CRITICAL: This is the missing part that prevents the null return!
         // FIXED: Return the primary key as backup if no separate backup key is configured
         // This prevents the bean creation failure while maintaining functionality
-        System.out.println("No backup JWT secret configured, using primary secret as backup");
+        log.info("No backup JWT secret configured, using primary secret as backup");
         return jwtSigningKey();
     }
 
@@ -131,8 +133,8 @@ public class JwtSecurityConfig {
         // 5. Generate new secret if auto-generation is enabled (development only)
         if (jwtProperties.isAutoGenerateSecret() && isDevelopmentEnvironment()) {
             String generatedSecret = generateSecureSecret();
-            System.err.println("WARNING: Generated JWT secret for development. Use proper secret management in production!");
-            System.err.println("Generated secret: " + generatedSecret);
+            log.error("WARNING: Generated JWT secret for development. Use proper secret management in production!");
+            log.error("Generated secret: " + generatedSecret);
             return generatedSecret;
         }
 
@@ -268,7 +270,7 @@ public class JwtSecurityConfig {
     private boolean isDevelopmentEnvironment() {
         String[] activeProfiles = environment.getActiveProfiles();
         for (String profile : activeProfiles) {
-            if ("dev".equals(profile) || "development".equals(profile) || "local".equals(profile)) {
+            if ("dev".equals(profile) || "development".equals(profile) || "local".equals(profile) || "test".equals(profile)) {
                 return true;
             }
         }

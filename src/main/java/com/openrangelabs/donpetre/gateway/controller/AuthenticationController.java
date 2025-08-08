@@ -5,6 +5,7 @@ import com.openrangelabs.donpetre.gateway.dto.AuthenticationResponse;
 import com.openrangelabs.donpetre.gateway.dto.RegisterRequest;
 import com.openrangelabs.donpetre.gateway.service.AuthenticationService;
 import jakarta.validation.Valid;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +19,7 @@ import java.util.Map;
  * REST controller for authentication operations
  * Handles user registration, login, token refresh, logout, and token validation
  */
+@Slf4j
 @RestController
 @RequestMapping("/api/auth")
 @CrossOrigin(origins = "${open-range-labs.donpetre.security.cors.allowed-origins}")
@@ -54,15 +56,15 @@ public class AuthenticationController {
     @PostMapping("/authenticate")
     public Mono<ResponseEntity<AuthenticationResponse>> authenticate(
             @Valid @RequestBody AuthenticationRequest request) {
-        System.out.println("Authentication request received for user: " + request.getUsername());
+        log.info("Authentication request received for user: " + request.getUsername());
         return authenticationService.authenticate(request)
-                .doOnNext(response -> System.out.println("Authentication successful for user: " + response.getUsername() + ", token length: " + (response.getAccessToken() != null ? response.getAccessToken().length() : 0)))
+                .doOnNext(response -> log.info("Authentication successful for user: " + response.getUsername() + ", token length: " + (response.getAccessToken() != null ? response.getAccessToken().length() : 0)))
                 .map(response -> {
-                    System.out.println("Returning response with body: " + (response != null));
+                    log.info("Returning response with body: " + (response != null));
                     return ResponseEntity.ok(response);
                 })
                 .onErrorResume(RuntimeException.class, e -> {
-                    System.err.println("Authentication failed: " + e.getMessage());
+                    log.error("Authentication failed: " + e.getMessage());
                     e.printStackTrace();
                     Map<String, Object> errorResponse = Map.of(
                             "message", "Invalid username or password",
@@ -79,6 +81,7 @@ public class AuthenticationController {
     @PostMapping("/login")
     public Mono<ResponseEntity<AuthenticationResponse>> login(
             @Valid @RequestBody AuthenticationRequest request) {
+        log.info("Authentication request received for user: " + request.getUsername() + " forwarding to authenticate method");
         return authenticate(request);
     }
 

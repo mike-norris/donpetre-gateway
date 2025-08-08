@@ -109,17 +109,17 @@ class AuthenticationServiceTest {
         @DisplayName("Should register new user successfully")
         void shouldRegisterNewUserSuccessfully() {
             // Arrange
+            User savedUser = new User("newuser", "newuser@example.com", "encoded_password");
+            savedUser.setId(UUID.randomUUID());
+            savedUser.setIsActive(true);
+            
             when(userRepository.existsByUsername(registerRequest.getUsername())).thenReturn(Mono.just(false));
             when(userRepository.existsByEmail(registerRequest.getEmail())).thenReturn(Mono.just(false));
             when(passwordEncoder.encode(registerRequest.getPassword())).thenReturn("encoded_password");
-            when(userRepository.save(any(User.class))).thenReturn(Mono.just(testUser));
+            when(userRepository.save(any(User.class))).thenReturn(Mono.just(savedUser));
             when(roleRepository.findByName("USER")).thenReturn(Mono.just(testRole));
+            when(roleRepository.save(any(Role.class))).thenReturn(Mono.just(testRole));
             when(userRoleService.assignRoleToUser(any(UUID.class), any(UUID.class))).thenReturn(Mono.empty());
-            
-            // Mock withRoles method
-            User userWithRoles = new User("testuser", "test@example.com", "encoded_password");
-            userWithRoles.setId(testUser.getId());
-            userWithRoles.setRoles(Set.of(testRole));
             when(jwtService.generateToken(any(User.class))).thenReturn("access_token");
             when(jwtService.generateRefreshToken(any(User.class))).thenReturn("refresh_token");
             when(refreshTokenRepository.save(any(RefreshToken.class))).thenReturn(Mono.just(new RefreshToken()));
@@ -130,8 +130,8 @@ class AuthenticationServiceTest {
                         assertThat(response).isNotNull();
                         assertThat(response.getAccessToken()).isEqualTo("access_token");
                         assertThat(response.getRefreshToken()).isEqualTo("refresh_token");
-                        assertThat(response.getUsername()).isEqualTo(testUser.getUsername());
-                        assertThat(response.getEmail()).isEqualTo(testUser.getEmail());
+                        assertThat(response.getUsername()).isEqualTo("newuser");
+                        assertThat(response.getEmail()).isEqualTo("newuser@example.com");
                     })
                     .verifyComplete();
 

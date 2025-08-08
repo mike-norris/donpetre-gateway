@@ -37,7 +37,7 @@
 //    @Override
 //    @Bean
 //    public ConnectionFactory connectionFactory() {
-//        System.out.println("R2DBC connection factory "+username+"::"+password+" "+host+":"+port+"/"+database);
+//        log.info("R2DBC connection factory "+username+"::"+password+" "+host+":"+port+"/"+database);
 //        return new PostgresqlConnectionFactory(
 //                PostgresqlConnectionConfiguration.builder()
 //                        .host(host)

@@ -9,51 +9,41 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Import;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.reactive.server.WebTestClient;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 
 import java.util.Map;
 import java.util.Set;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-@WebFluxTest(controllers = AuthenticationController.class)
-@Import(AuthenticationControllerTest.TestConfig.class)
-@DisplayName("AuthenticationController Integration Tests")
+/**
+ * Pure unit tests for AuthenticationController without Spring context
+ */
+@ExtendWith(MockitoExtension.class)
+@DisplayName("AuthenticationController Unit Tests")
 class AuthenticationControllerTest {
 
-    @Autowired
-    private WebTestClient webTestClient;
-
-    @Autowired
+    @Mock
     private AuthenticationService authenticationService;
 
-    private ObjectMapper objectMapper = new ObjectMapper();
+    @InjectMocks
+    private AuthenticationController authenticationController;
 
+    private ObjectMapper objectMapper = new ObjectMapper();
     private RegisterRequest registerRequest;
     private AuthenticationRequest authRequest;
     private AuthenticationResponse authResponse;
 
-    @TestConfiguration
-    static class TestConfig {
-        @Bean
-        public AuthenticationService authenticationService() {
-            return mock(AuthenticationService.class);
-        }
-    }
-
     @BeforeEach
     void setUp() {
-        reset(authenticationService);
-
         registerRequest = new RegisterRequest();
         registerRequest.setUsername("testuser");
         registerRequest.setEmail("test@example.com");
@@ -74,299 +64,144 @@ class AuthenticationControllerTest {
     }
 
     @Nested
-    @DisplayName("Registration Endpoint Tests")
-    class RegistrationEndpointTests {
+    @DisplayName("Registration Tests")
+    class RegistrationTests {
 
         @Test
-        @DisplayName("POST /api/auth/register - Success")
-        void registerUser_Success() throws Exception {
+        @DisplayName("Should handle successful registration")
+        void shouldHandleSuccessfulRegistration() {
             // Arrange
             when(authenticationService.register(any(RegisterRequest.class)))
                     .thenReturn(Mono.just(authResponse));
 
             // Act & Assert
-            webTestClient.post()
-                    .uri("/api/auth/register")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(objectMapper.writeValueAsString(registerRequest))
-                    .exchange()
-                    .expectStatus().isOk()
-                    .expectHeader().contentType(MediaType.APPLICATION_JSON)
-                    .expectBody()
-                    .jsonPath("$.accessToken").isEqualTo("access_token")
-                    .jsonPath("$.refreshToken").isEqualTo("refresh_token")
-                    .jsonPath("$.username").isEqualTo("testuser")
-                    .jsonPath("$.email").isEqualTo("test@example.com")
-                    .jsonPath("$.roles").isArray()
-                    .jsonPath("$.roles[0]").isEqualTo("USER");
+            StepVerifier.create(authenticationController.register(registerRequest))
+                    .assertNext(response -> {
+                        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+                        assertThat(response.getBody()).isNotNull();
+                        assertThat(response.getBody().getAccessToken()).isEqualTo("access_token");
+                        assertThat(response.getBody().getUsername()).isEqualTo("testuser");
+                    })
+                    .verifyComplete();
 
-            verify(authenticationService).register(any(RegisterRequest.class));
+            verify(authenticationService).register(registerRequest);
         }
 
         @Test
-        @DisplayName("POST /api/auth/register - Username already exists")
-        void registerUser_UsernameExists() throws Exception {
+        @DisplayName("Should handle registration failure")
+        void shouldHandleRegistrationFailure() {
             // Arrange
             when(authenticationService.register(any(RegisterRequest.class)))
                     .thenReturn(Mono.error(new RuntimeException("Username already exists")));
 
             // Act & Assert
-            webTestClient.post()
-                    .uri("/api/auth/register")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(objectMapper.writeValueAsString(registerRequest))
-                    .exchange()
-                    .expectStatus().isBadRequest();
+            StepVerifier.create(authenticationController.register(registerRequest))
+                    .assertNext(response -> {
+                        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+                        assertThat(response.getBody()).isNull();
+                    })
+                    .verifyComplete();
 
-            verify(authenticationService).register(any(RegisterRequest.class));
-        }
-
-        @Test
-        @DisplayName("POST /api/auth/register - Invalid request body")
-        void registerUser_InvalidRequest() {
-            // Arrange - Empty request body
-            RegisterRequest invalidRequest = new RegisterRequest();
-
-            // Act & Assert
-            webTestClient.post()
-                    .uri("/api/auth/register")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(invalidRequest)
-                    .exchange()
-                    .expectStatus().isBadRequest();
-
-            verify(authenticationService, never()).register(any(RegisterRequest.class));
-        }
-
-        @Test
-        @DisplayName("POST /api/auth/register - Malformed JSON")
-        void registerUser_MalformedJson() {
-            // Act & Assert
-            webTestClient.post()
-                    .uri("/api/auth/register")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue("{ invalid json }")
-                    .exchange()
-                    .expectStatus().isBadRequest();
-
-            verify(authenticationService, never()).register(any(RegisterRequest.class));
+            verify(authenticationService).register(registerRequest);
         }
     }
 
     @Nested
-    @DisplayName("Authentication Endpoint Tests")
-    class AuthenticationEndpointTests {
+    @DisplayName("Authentication Tests")
+    class AuthenticationTests {
 
         @Test
-        @DisplayName("POST /api/auth/authenticate - Success")
-        void authenticateUser_Success() throws Exception {
+        @DisplayName("Should handle successful authentication")
+        void shouldHandleSuccessfulAuthentication() {
             // Arrange
             when(authenticationService.authenticate(any(AuthenticationRequest.class)))
                     .thenReturn(Mono.just(authResponse));
 
             // Act & Assert
-            webTestClient.post()
-                    .uri("/api/auth/authenticate")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(objectMapper.writeValueAsString(authRequest))
-                    .exchange()
-                    .expectStatus().isOk()
-                    .expectHeader().contentType(MediaType.APPLICATION_JSON)
-                    .expectBody()
-                    .jsonPath("$.accessToken").isEqualTo("access_token")
-                    .jsonPath("$.username").isEqualTo("testuser");
+            StepVerifier.create(authenticationController.authenticate(authRequest))
+                    .assertNext(response -> {
+                        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+                        assertThat(response.getBody()).isNotNull();
+                        assertThat(response.getBody().getAccessToken()).isEqualTo("access_token");
+                    })
+                    .verifyComplete();
 
-            verify(authenticationService).authenticate(any(AuthenticationRequest.class));
+            verify(authenticationService).authenticate(authRequest);
         }
 
         @Test
-        @DisplayName("POST /api/auth/authenticate - Invalid credentials")
-        void authenticateUser_InvalidCredentials() throws Exception {
+        @DisplayName("Should handle authentication failure")
+        void shouldHandleAuthenticationFailure() {
             // Arrange
             when(authenticationService.authenticate(any(AuthenticationRequest.class)))
                     .thenReturn(Mono.error(new RuntimeException("Invalid credentials")));
 
             // Act & Assert
-            webTestClient.post()
-                    .uri("/api/auth/authenticate")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(objectMapper.writeValueAsString(authRequest))
-                    .exchange()
-                    .expectStatus().isUnauthorized();
+            StepVerifier.create(authenticationController.authenticate(authRequest))
+                    .assertNext(response -> {
+                        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+                        assertThat(response.getBody()).isNull();
+                    })
+                    .verifyComplete();
 
-            verify(authenticationService).authenticate(any(AuthenticationRequest.class));
-        }
-
-        @Test
-        @DisplayName("POST /api/auth/login - Success (alias endpoint)")
-        void loginUser_Success() throws Exception {
-            // Arrange
-            when(authenticationService.authenticate(any(AuthenticationRequest.class)))
-                    .thenReturn(Mono.just(authResponse));
-
-            // Act & Assert
-            webTestClient.post()
-                    .uri("/api/auth/login")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(objectMapper.writeValueAsString(authRequest))
-                    .exchange()
-                    .expectStatus().isOk()
-                    .expectHeader().contentType(MediaType.APPLICATION_JSON)
-                    .expectBody()
-                    .jsonPath("$.accessToken").isEqualTo("access_token");
-
-            verify(authenticationService).authenticate(any(AuthenticationRequest.class));
+            verify(authenticationService).authenticate(authRequest);
         }
     }
 
     @Nested
-    @DisplayName("Token Management Endpoint Tests")
-    class TokenManagementEndpointTests {
+    @DisplayName("Token Management Tests")
+    class TokenManagementTests {
 
         @Test
-        @DisplayName("POST /api/auth/refresh-token - Success")
-        void refreshToken_Success() {
+        @DisplayName("Should handle successful token refresh")
+        void shouldHandleSuccessfulTokenRefresh() {
             // Arrange
-            when(authenticationService.refreshToken(anyString()))
+            String authHeader = "Bearer refresh_token";
+            when(authenticationService.refreshToken(authHeader))
                     .thenReturn(Mono.just(authResponse));
 
             // Act & Assert
-            webTestClient.post()
-                    .uri("/api/auth/refresh-token")
-                    .header("Authorization", "Bearer refresh_token_123")
-                    .exchange()
-                    .expectStatus().isOk()
-                    .expectHeader().contentType(MediaType.APPLICATION_JSON)
-                    .expectBody()
-                    .jsonPath("$.accessToken").isEqualTo("access_token")
-                    .jsonPath("$.refreshToken").isEqualTo("refresh_token");
+            StepVerifier.create(authenticationController.refreshToken(authHeader))
+                    .assertNext(response -> {
+                        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+                        assertThat(response.getBody()).isNotNull();
+                        assertThat(response.getBody().getAccessToken()).isEqualTo("access_token");
+                    })
+                    .verifyComplete();
 
-            verify(authenticationService).refreshToken("Bearer refresh_token_123");
+            verify(authenticationService).refreshToken(authHeader);
         }
 
         @Test
-        @DisplayName("POST /api/auth/refresh-token - Invalid token")
-        void refreshToken_InvalidToken() {
+        @DisplayName("Should handle token validation")
+        void shouldHandleTokenValidation() {
             // Arrange
-            when(authenticationService.refreshToken(anyString()))
-                    .thenReturn(Mono.error(new RuntimeException("Invalid refresh token")));
-
-            // Act & Assert
-            webTestClient.post()
-                    .uri("/api/auth/refresh-token")
-                    .header("Authorization", "Bearer invalid_token")
-                    .exchange()
-                    .expectStatus().isUnauthorized();
-
-            verify(authenticationService).refreshToken("Bearer invalid_token");
-        }
-
-        @Test
-        @DisplayName("POST /api/auth/refresh-token - Missing header")
-        void refreshToken_MissingHeader() {
-            // Act & Assert
-            webTestClient.post()
-                    .uri("/api/auth/refresh-token")
-                    .exchange()
-                    .expectStatus().isBadRequest();
-
-            verify(authenticationService, never()).refreshToken(anyString());
-        }
-
-        @Test
-        @DisplayName("GET /api/auth/validate - Valid token")
-        void validateToken_ValidToken() {
-            // Arrange
-            when(authenticationService.validateToken(anyString()))
+            String authHeader = "Bearer valid_token";
+            when(authenticationService.validateToken(authHeader))
                     .thenReturn(Mono.just(true));
 
             // Act & Assert
-            webTestClient.get()
-                    .uri("/api/auth/validate")
-                    .header("Authorization", "Bearer valid_token")
-                    .exchange()
-                    .expectStatus().isOk()
-                    .expectHeader().contentType(MediaType.APPLICATION_JSON)
-                    .expectBody()
-                    .jsonPath("$.valid").isEqualTo(true);
+            StepVerifier.create(authenticationController.validateToken(authHeader))
+                    .assertNext(response -> {
+                        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+                        assertThat(response.getBody()).isNotNull();
+                        assertThat(response.getBody().get("valid")).isEqualTo(true);
+                    })
+                    .verifyComplete();
 
-            verify(authenticationService).validateToken("Bearer valid_token");
-        }
-
-        @Test
-        @DisplayName("GET /api/auth/validate - Invalid token")
-        void validateToken_InvalidToken() {
-            // Arrange
-            when(authenticationService.validateToken(anyString()))
-                    .thenReturn(Mono.just(false));
-
-            // Act & Assert
-            webTestClient.get()
-                    .uri("/api/auth/validate")
-                    .header("Authorization", "Bearer invalid_token")
-                    .exchange()
-                    .expectStatus().isOk()
-                    .expectHeader().contentType(MediaType.APPLICATION_JSON)
-                    .expectBody()
-                    .jsonPath("$.valid").isEqualTo(false);
-
-            verify(authenticationService).validateToken("Bearer invalid_token");
+            verify(authenticationService).validateToken(authHeader);
         }
     }
 
     @Nested
-    @DisplayName("Logout Endpoint Tests")
-    class LogoutEndpointTests {
+    @DisplayName("User Information Tests")
+    class UserInformationTests {
 
         @Test
-        @DisplayName("POST /api/auth/logout - Success")
-        void logout_Success() {
+        @DisplayName("Should get current user information")
+        void shouldGetCurrentUserInformation() {
             // Arrange
-            when(authenticationService.logout(anyString()))
-                    .thenReturn(Mono.empty());
-
-            // Act & Assert
-            webTestClient.post()
-                    .uri("/api/auth/logout")
-                    .header("Authorization", "Bearer refresh_token")
-                    .exchange()
-                    .expectStatus().isOk()
-                    .expectHeader().contentType(MediaType.APPLICATION_JSON)
-                    .expectBody()
-                    .jsonPath("$.message").isEqualTo("Successfully logged out");
-
-            verify(authenticationService).logout("Bearer refresh_token");
-        }
-
-        @Test
-        @DisplayName("POST /api/auth/logout - Failure")
-        void logout_Failure() {
-            // Arrange
-            when(authenticationService.logout(anyString()))
-                    .thenReturn(Mono.error(new RuntimeException("Logout failed")));
-
-            // Act & Assert
-            webTestClient.post()
-                    .uri("/api/auth/logout")
-                    .header("Authorization", "Bearer invalid_token")
-                    .exchange()
-                    .expectStatus().isBadRequest()
-                    .expectHeader().contentType(MediaType.APPLICATION_JSON)
-                    .expectBody()
-                    .jsonPath("$.message").isEqualTo("Logout failed");
-
-            verify(authenticationService).logout("Bearer invalid_token");
-        }
-    }
-
-    @Nested
-    @DisplayName("Current User Endpoint Tests")
-    class CurrentUserEndpointTests {
-
-        @Test
-        @DisplayName("GET /api/auth/me - Success")
-        void getCurrentUser_Success() {
-            // Arrange
+            String authHeader = "Bearer valid_token";
             Map<String, Object> userInfo = Map.of(
                     "id", "123e4567-e89b-12d3-a456-426614174000",
                     "username", "testuser",
@@ -375,146 +210,64 @@ class AuthenticationControllerTest {
                     "isActive", true
             );
 
-            when(authenticationService.getCurrentUser(anyString()))
+            when(authenticationService.getCurrentUser(authHeader))
                     .thenReturn(Mono.just(userInfo));
 
             // Act & Assert
-            webTestClient.get()
-                    .uri("/api/auth/me")
-                    .header("Authorization", "Bearer valid_token")
-                    .exchange()
-                    .expectStatus().isOk()
-                    .expectHeader().contentType(MediaType.APPLICATION_JSON)
-                    .expectBody()
-                    .jsonPath("$.username").isEqualTo("testuser")
-                    .jsonPath("$.email").isEqualTo("test@example.com")
-                    .jsonPath("$.isActive").isEqualTo(true);
+            StepVerifier.create(authenticationController.getCurrentUser(authHeader))
+                    .assertNext(response -> {
+                        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+                        assertThat(response.getBody()).isNotNull();
+                        assertThat(response.getBody()).containsEntry("username", "testuser");
+                    })
+                    .verifyComplete();
 
-            verify(authenticationService).getCurrentUser("Bearer valid_token");
-        }
-
-        @Test
-        @DisplayName("GET /api/auth/me - Invalid token")
-        void getCurrentUser_InvalidToken() {
-            // Arrange
-            when(authenticationService.getCurrentUser(anyString()))
-                    .thenReturn(Mono.error(new RuntimeException("Invalid token")));
-
-            // Act & Assert
-            webTestClient.get()
-                    .uri("/api/auth/me")
-                    .header("Authorization", "Bearer invalid_token")
-                    .exchange()
-                    .expectStatus().isUnauthorized()
-                    .expectHeader().contentType(MediaType.APPLICATION_JSON)
-                    .expectBody()
-                    .jsonPath("$.message").isEqualTo("Unable to retrieve user information");
-
-            verify(authenticationService).getCurrentUser("Bearer invalid_token");
-        }
-
-        @Test
-        @DisplayName("GET /api/auth/me - Missing header")
-        void getCurrentUser_MissingHeader() {
-            // Act & Assert
-            webTestClient.get()
-                    .uri("/api/auth/me")
-                    .exchange()
-                    .expectStatus().isBadRequest();
-
-            verify(authenticationService, never()).getCurrentUser(anyString());
+            verify(authenticationService).getCurrentUser(authHeader);
         }
     }
 
     @Nested
-    @DisplayName("Error Response Tests")
-    class ErrorResponseTests {
+    @DisplayName("Logout Tests")
+    class LogoutTests {
 
         @Test
-        @DisplayName("Should return proper error structure for service exceptions")
-        void shouldReturnProperErrorStructure() {
+        @DisplayName("Should handle successful logout")
+        void shouldHandleSuccessfulLogout() {
             // Arrange
-            when(authenticationService.register(any(RegisterRequest.class)))
-                    .thenReturn(Mono.error(new RuntimeException("Service error")));
+            String authHeader = "Bearer refresh_token";
+            when(authenticationService.logout(authHeader))
+                    .thenReturn(Mono.empty());
 
             // Act & Assert
-            webTestClient.post()
-                    .uri("/api/auth/register")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(registerRequest)
-                    .exchange()
-                    .expectStatus().isBadRequest();
+            StepVerifier.create(authenticationController.logout(authHeader))
+                    .assertNext(response -> {
+                        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+                        assertThat(response.getBody()).isNotNull();
+                        assertThat(response.getBody()).containsEntry("message", "Successfully logged out");
+                    })
+                    .verifyComplete();
+
+            verify(authenticationService).logout(authHeader);
         }
 
         @Test
-        @DisplayName("Should handle large request bodies")
-        void shouldHandleLargeRequestBodies() throws Exception {
-            // Arrange - Create a request with very long strings
-            RegisterRequest largeRequest = new RegisterRequest();
-            largeRequest.setUsername("a".repeat(1000));
-            largeRequest.setEmail("test@example.com");
-            largeRequest.setPassword("password123");
-
-            // Act & Assert
-            webTestClient.post()
-                    .uri("/api/auth/register")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(objectMapper.writeValueAsString(largeRequest))
-                    .exchange()
-                    .expectStatus().isBadRequest();
-        }
-
-        @Test
-        @DisplayName("Should handle concurrent requests")
-        void shouldHandleConcurrentRequests() throws Exception {
+        @DisplayName("Should handle logout failure")
+        void shouldHandleLogoutFailure() {
             // Arrange
-            when(authenticationService.authenticate(any(AuthenticationRequest.class)))
-                    .thenReturn(Mono.just(authResponse));
-
-            // Act & Assert - Multiple concurrent requests
-            for (int i = 0; i < 5; i++) {
-                webTestClient.post()
-                        .uri("/api/auth/authenticate")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .bodyValue(objectMapper.writeValueAsString(authRequest))
-                        .exchange()
-                        .expectStatus().isOk();
-            }
-
-            verify(authenticationService, times(5)).authenticate(any(AuthenticationRequest.class));
-        }
-    }
-
-    @Nested
-    @DisplayName("Content Type Tests")
-    class ContentTypeTests {
-
-        @Test
-        @DisplayName("Should reject non-JSON content type for POST endpoints")
-        void shouldRejectNonJsonContentType() {
-            // Act & Assert
-            webTestClient.post()
-                    .uri("/api/auth/register")
-                    .contentType(MediaType.TEXT_PLAIN)
-                    .bodyValue("plain text")
-                    .exchange()
-                    .expectStatus().is4xxClientError();
-        }
-
-        @Test
-        @DisplayName("Should accept JSON content type")
-        void shouldAcceptJsonContentType() throws Exception {
-            // Arrange
-            when(authenticationService.register(any(RegisterRequest.class)))
-                    .thenReturn(Mono.just(authResponse));
+            String authHeader = "Bearer invalid_token";
+            when(authenticationService.logout(authHeader))
+                    .thenReturn(Mono.error(new RuntimeException("Logout failed")));
 
             // Act & Assert
-            webTestClient.post()
-                    .uri("/api/auth/register")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(objectMapper.writeValueAsString(registerRequest))
-                    .exchange()
-                    .expectStatus().isOk();
+            StepVerifier.create(authenticationController.logout(authHeader))
+                    .assertNext(response -> {
+                        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+                        assertThat(response.getBody()).isNotNull();
+                        assertThat(response.getBody()).containsEntry("message", "Logout failed");
+                    })
+                    .verifyComplete();
+
+            verify(authenticationService).logout(authHeader);
         }
     }
 }

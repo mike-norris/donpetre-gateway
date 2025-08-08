@@ -1,5 +1,6 @@
 package com.openrangelabs.donpetre.gateway.security;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -20,6 +21,7 @@ import org.springframework.web.cors.reactive.CorsWebFilter;
  * Simplified Security Configuration for API Gateway
  * Uses custom JWT authentication without OAuth2 resource server complexity
  */
+@Slf4j
 @Configuration
 @EnableWebFluxSecurity
 public class SecurityConfig {
@@ -75,17 +77,12 @@ public class SecurityConfig {
      */
     @Bean
     public PasswordEncoder passwordEncoder() {
+        log.debug("Creating BCryptPasswordEncoder with strength 12");
         return new BCryptPasswordEncoder(12);
     }
 
     /**
-     * Reactive authentication manager for username/password authentication
+     * Note: ReactiveAuthenticationManager is now provided by CustomReactiveAuthenticationManager
+     * as a @Component, so no bean configuration needed here.
      */
-    @Bean
-    public ReactiveAuthenticationManager reactiveAuthenticationManager() {
-        UserDetailsRepositoryReactiveAuthenticationManager authManager =
-                new UserDetailsRepositoryReactiveAuthenticationManager(userDetailsService);
-        authManager.setPasswordEncoder(passwordEncoder());
-        return authManager;
-    }
 }

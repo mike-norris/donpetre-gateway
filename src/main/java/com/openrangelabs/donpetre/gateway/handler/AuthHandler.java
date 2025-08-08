@@ -4,6 +4,7 @@ import com.openrangelabs.donpetre.gateway.dto.AuthenticationRequest;
 import com.openrangelabs.donpetre.gateway.dto.AuthenticationResponse;
 import com.openrangelabs.donpetre.gateway.dto.RegisterRequest;
 import com.openrangelabs.donpetre.gateway.service.AuthenticationService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -15,6 +16,7 @@ import reactor.core.publisher.Mono;
 import java.time.LocalDateTime;
 import java.util.Map;
 
+@Slf4j
 @Component
 public class AuthHandler {
 
@@ -30,12 +32,12 @@ public class AuthHandler {
     }
 
     public Mono<ServerResponse> authenticate(ServerRequest request) {
-        System.out.println("AuthHandler.authenticate called");
+        log.info("AuthHandler.authenticate called");
         
         return request.bodyToMono(AuthenticationRequest.class)
-                .doOnNext(req -> System.out.println("Authentication request for user: " + req.getUsername()))
+                .doOnNext(req -> log.info("Authentication request for user: " + req.getUsername()))
                 .flatMap(authRequest -> authenticationService.authenticate(authRequest)
-                        .doOnNext(response -> System.out.println("Authentication successful, access token length: " + 
+                        .doOnNext(response -> log.info("Authentication successful, access token length: " +
                                 (response.getAccessToken() != null ? response.getAccessToken().length() : 0)))
                         .flatMap(authResponse -> 
                                 ServerResponse.ok()
@@ -43,7 +45,7 @@ public class AuthHandler {
                                         .body(BodyInserters.fromValue(authResponse))
                         )
                         .onErrorResume(RuntimeException.class, e -> {
-                            System.err.println("Authentication failed: " + e.getMessage());
+                            log.error("Authentication failed: " + e.getMessage());
                             e.printStackTrace();
                             Map<String, Object> errorResponse = Map.of(
                                     "message", "Invalid username or password",
